@@ -45,6 +45,11 @@ type AdministratorRequestPage = {
   total_pages: number;
 };
 
+type AdministratorRequestStatusResponse = {
+  id: number;
+  status: RequestStatus;
+};
+
 type ApplicationPath = "/" | "/login" | "/admin";
 
 type AdministratorSession = {
@@ -233,6 +238,9 @@ function AdministratorPanel({ accessToken, onLogout }: AdministratorPanelProps) 
   const [page, setPage] = useState(1);
   const [queueError, setQueueError] = useState<string | null>(null);
   const [isLoadingQueue, setIsLoadingQueue] = useState(true);
+  const [queueRefresh, setQueueRefresh] = useState(0);
+  const [requestBeingUpdated, setRequestBeingUpdated] = useState<number | null>(null);
+  const [statusFeedback, setStatusFeedback] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -285,7 +293,7 @@ function AdministratorPanel({ accessToken, onLogout }: AdministratorPanelProps) 
     return () => {
       isMounted = false;
     };
-  }, [accessToken, activeSearch, onLogout, page, statusFilter]);
+  }, [accessToken, activeSearch, onLogout, page, queueRefresh, statusFilter]);
 
   function updateStatusFilter(nextStatus: RequestStatus | "") {
     setStatusFilter(nextStatus);
@@ -296,6 +304,52 @@ function AdministratorPanel({ accessToken, onLogout }: AdministratorPanelProps) 
     event.preventDefault();
     setActiveSearch(searchInput.trim());
     setPage(1);
+  }
+
+  async function confirmRequest(request: AdministratorRequestSummary) {
+    setQueueError(null);
+    setStatusFeedback(null);
+    setRequestBeingUpdated(request.id);
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/admin/requests/${request.id}/status`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ status: "CONFIRMADO" }),
+      });
+      if (response.status === 401) {
+        onLogout();
+        return;
+      }
+      if (!response.ok) {
+        throw new Error("Não foi possível confirmar a solicitação.");
+      }
+
+      const updatedRequest = (await response.json()) as AdministratorRequestStatusResponse;
+      if (updatedRequest.status !== "CONFIRMADO") {
+        throw new Error("Não foi possível confirmar a solicitação.");
+      }
+
+      setRequestPage((currentPage) => currentPage ? {
+        ...currentPage,
+        items: currentPage.items.map((currentRequest) => (
+          currentRequest.id === updatedRequest.id
+            ? { ...currentRequest, status: updatedRequest.status }
+            : currentRequest
+        )),
+      } : currentPage);
+      setStatusFeedback(`Solicitação de ${request.name} confirmada.`);
+      setQueueRefresh((currentRefresh) => currentRefresh + 1);
+    } catch (error) {
+      setQueueError(
+        error instanceof Error ? error.message : "Não foi possível confirmar a solicitação.",
+      );
+    } finally {
+      setRequestBeingUpdated(null);
+    }
   }
 
   const totalPages = Math.max(requestPage?.total_pages ?? 1, 1);
@@ -343,6 +397,7 @@ function AdministratorPanel({ accessToken, onLogout }: AdministratorPanelProps) 
         </div>
 
         {queueError ? <p className="notice notice--error" role="alert">{queueError}</p> : null}
+        {statusFeedback ? <p className="notice notice--success" role="status">{statusFeedback}</p> : null}
         {isLoadingQueue ? <p className="notice">Carregando solicitações…</p> : null}
         {!isLoadingQueue && !queueError && requestPage?.items.length === 0 ? (
           <p className="notice">Nenhuma solicitação encontrada.</p>
@@ -357,6 +412,7 @@ function AdministratorPanel({ accessToken, onLogout }: AdministratorPanelProps) 
                   <th scope="col">Serviço</th>
                   <th scope="col">Status</th>
                   <th scope="col">Recebido</th>
+                  <th scope="col">Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -373,6 +429,19 @@ function AdministratorPanel({ accessToken, onLogout }: AdministratorPanelProps) 
                       </strong>
                     </td>
                     <td>{formatRequestDate(request.created_at)}</td>
+                    <td>
+                      {request.status === "PENDENTE" ? (
+                        <button
+                          aria-label={`Confirmar solicitação de ${request.name}`}
+                          className="admin-action admin-action--confirm"
+                          disabled={requestBeingUpdated === request.id}
+                          onClick={() => void confirmRequest(request)}
+                          type="button"
+                        >
+                          {requestBeingUpdated === request.id ? "Confirmando…" : "Confirmar"}
+                        </button>
+                      ) : <span className="admin-action__empty">—</span>}
+                    </td>
                   </tr>
                 ))}
               </tbody>
