@@ -53,3 +53,15 @@ class PublicRequestResponse(BaseModel):
     tracking_code: str
     service_title: str
     created_at: datetime
+
+
+class PublicRequestTrackingResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    tracking_code: str
+    status: str
+    service_title: str
+    vehicle_make: str
+    vehicle_model: str
+    created_at: datetime
+    updated_at: datetime

@@ -99,9 +99,26 @@ textarea { resize: vertical; min-height: 89px; }
 .confirmation__code strong { font-size: 20px; letter-spacing: -.5px; }
 .confirmation__code a { color: #db0815; font-size: 10px; font-weight: 750; }
 
+.tracking-section { max-width: 1190px; display: grid; grid-template-columns: minmax(0, .76fr) minmax(480px, 1.24fr); gap: 24px; align-items: start; margin: 0 auto 42px; padding: 0 24px; }
+.tracking-section > div:first-child { padding: 24px 0; }
+.tracking-card { padding: 22px; border: 1px solid #e8e9ec; border-radius: 9px; background: #fff; box-shadow: 0 12px 30px rgba(24, 29, 39, .035); }
+.tracking-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: end; }
+.tracking-form .button { min-height: 38px; }
+.tracking-result { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 18px; align-items: center; margin-top: 16px; padding-top: 16px; border-top: 1px solid #eceef1; }
+.tracking-result h3 { margin: 0; font-size: 24px; }
+.tracking-result > div > span { display: block; margin-top: 4px; color: #68717d; font-size: 12px; }
+.tracking-result__status { display: grid; justify-items: end; gap: 5px; }
+.tracking-result__status small { color: #68717d; font-size: 10px; font-weight: 700; }
+.tracking-status { display: inline-flex; padding: 6px 8px; border-radius: 999px; font-size: 11px; }
+.tracking-status--pendente { color: #835800; background: #fff1cb; }
+.tracking-status--confirmado { color: #14653a; background: #dff5e7; }
+.tracking-status--cancelado { color: #941824; background: #ffebed; }
+
 footer { display: grid; grid-template-columns: 1.25fr 1.55fr 1.3fr 1.25fr 1fr; gap: 26px; padding: 28px max(32px, calc((100vw - 1190px) / 2)); color: #e7e7e8; background: #111317; }
 footer .brand { color: #fff; }
-footer p { margin: 0; color: #d4d5d8; font-size: 12px; line-height: 1.45; }
+footer p, footer .footer-tracking { margin: 0; color: #d4d5d8; font-size: 12px; line-height: 1.45; }
+footer .footer-tracking { text-decoration: none; }
+footer .footer-tracking:hover { color: #fff; }
 footer div { display: grid; gap: 4px; font-size: 11px; }
 footer div b { margin-bottom: 2px; }
 
@@ -111,6 +128,8 @@ footer div b { margin-bottom: 2px; }
   .topbar nav a:nth-child(2), .topbar nav a:nth-child(4) { display: none; }
   .hero { padding-inline: 38px; grid-template-columns: 1fr .56fr; }
   .request-layout { grid-template-columns: 1fr; max-width: 760px; }
+  .tracking-section { grid-template-columns: 1fr; max-width: 760px; }
+  .tracking-section > div:first-child { padding-bottom: 0; }
   footer { grid-template-columns: 1.2fr 1fr 1fr; }
   footer p:last-child, footer .brand + p { display: none; }
 }
@@ -130,6 +149,12 @@ footer div b { margin-bottom: 2px; }
   .hero__benefits { display: grid; gap: 7px; font-size: 10px; }
   .hero__benefits li { padding: 0; border: 0; }
   .request-layout { margin-top: 0; padding: 0 12px 24px; }
+  .tracking-section { gap: 0; margin-bottom: 24px; padding: 0 12px; }
+  .tracking-section > div:first-child { padding: 19px 16px; border: 1px solid #e8e9ec; border-bottom: 0; border-radius: 0; background: #fff; }
+  .tracking-card { padding: 0 16px 19px; border-radius: 0; }
+  .tracking-form { grid-template-columns: 1fr; }
+  .tracking-result { grid-template-columns: 1fr; gap: 12px; }
+  .tracking-result__status { justify-items: start; }
   .services-panel, .form-card { padding: 19px 16px; border-radius: 0; }
   h2, .form-card h2 { font-size: 29px; }
   .service-grid { grid-template-columns: 1fr; }

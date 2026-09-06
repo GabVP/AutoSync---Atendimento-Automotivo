@@ -14,6 +14,16 @@ type RequestConfirmation = {
   created_at: string;
 };
 
+type TrackingResult = {
+  tracking_code: string;
+  status: "PENDENTE" | "CONFIRMADO" | "CANCELADO";
+  service_title: string;
+  vehicle_make: string;
+  vehicle_model: string;
+  created_at: string;
+  updated_at: string;
+};
+
 type FormValues = {
   name: string;
   phone: string;
@@ -28,6 +38,7 @@ type FormValues = {
 };
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1";
+const trackingCodePattern = /^ATS-[A-F0-9]{8}$/;
 
 const emptyForm: FormValues = {
   name: "",
@@ -58,6 +69,14 @@ function displayDuration(durationMinutes: number): string {
   return minutes ? `A partir de ${hours}h ${minutes}min` : `A partir de ${hours} hora`;
 }
 
+function displayStatus(status: TrackingResult["status"]): string {
+  return {
+    PENDENTE: "Pendente de confirmação",
+    CONFIRMADO: "Atendimento confirmado",
+    CANCELADO: "Solicitação cancelada",
+  }[status];
+}
+
 function App() {
   const [services, setServices] = useState<Service[]>([]);
   const [form, setForm] = useState<FormValues>(emptyForm);
@@ -66,6 +85,10 @@ function App() {
   const [submissionError, setSubmissionError] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<RequestConfirmation | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [trackingCode, setTrackingCode] = useState("");
+  const [trackingResult, setTrackingResult] = useState<TrackingResult | null>(null);
+  const [trackingError, setTrackingError] = useState<string | null>(null);
+  const [isTracking, setIsTracking] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -173,6 +196,40 @@ function App() {
       );
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  async function trackRequest(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const normalizedTrackingCode = trackingCode.trim().toUpperCase();
+    setTrackingError(null);
+    setTrackingResult(null);
+
+    if (!trackingCodePattern.test(normalizedTrackingCode)) {
+      setTrackingError("Use o código no formato ATS-XXXXXXXX para acompanhar sua solicitação.");
+      return;
+    }
+
+    setIsTracking(true);
+    try {
+      const response = await fetch(
+        `${apiBaseUrl}/requests/${encodeURIComponent(normalizedTrackingCode)}`,
+      );
+      if (!response.ok) {
+        throw new Error("Não encontramos uma solicitação com esse código. Confira e tente novamente.");
+      }
+
+      const trackedRequest = (await response.json()) as TrackingResult;
+      setTrackingCode(normalizedTrackingCode);
+      setTrackingResult(trackedRequest);
+    } catch (error) {
+      setTrackingError(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível consultar a solicitação agora. Tente novamente.",
+      );
+    } finally {
+      setIsTracking(false);
     }
   }
 
@@ -340,13 +397,57 @@ function App() {
             ) : null}
           </section>
         </section>
+
+        <section className="tracking-section" id="tracking" aria-labelledby="tracking-title">
+          <div>
+            <p className="eyebrow">ACOMPANHAMENTO</p>
+            <h2 id="tracking-title">Consulte sua solicitação</h2>
+            <p className="section-intro">
+              Informe o código enviado depois do cadastro para ver o status atual do seu pedido.
+            </p>
+          </div>
+          <div className="tracking-card">
+            <form className="tracking-form" noValidate onSubmit={trackRequest}>
+              <label>
+                Código de acompanhamento
+                <input
+                  aria-describedby={trackingError ? "tracking-error" : undefined}
+                  aria-invalid={Boolean(trackingError)}
+                  autoCapitalize="characters"
+                  onChange={(event) => setTrackingCode(event.target.value)}
+                  placeholder="Ex.: ATS-AB12CD34"
+                  value={trackingCode}
+                />
+              </label>
+              <button className="button" disabled={isTracking} type="submit">
+                {isTracking ? "Consultando…" : "Acompanhar solicitação"}
+              </button>
+            </form>
+            {trackingError ? <p className="notice notice--error" id="tracking-error" role="alert">{trackingError}</p> : null}
+            {trackingResult ? (
+              <section className="tracking-result" aria-live="polite">
+                <div>
+                  <p className="eyebrow">SOLICITAÇÃO ENCONTRADA</p>
+                  <h3>{trackingResult.service_title}</h3>
+                  <span>{trackingResult.vehicle_make} {trackingResult.vehicle_model}</span>
+                </div>
+                <div className="tracking-result__status">
+                  <small>Status atual</small>
+                  <strong className={`tracking-status tracking-status--${trackingResult.status.toLowerCase()}`}>
+                    {displayStatus(trackingResult.status)}
+                  </strong>
+                </div>
+              </section>
+            ) : null}
+          </div>
+        </section>
       </main>
 
       <footer>
         <a className="brand brand--footer" href="#top"><span className="brand-mark" aria-hidden="true"><i /><i /></span><span><strong>AutoSync</strong><small>SEU CARRO SEMPRE EM MOVIMENTO</small></span></a>
         <p>Confiabilidade hoje.<br />Mais estrada amanhã.</p>
         <div><b>Contato</b><span>(11) 4000-1234</span><span>contato@autosync.com.br</span><span>São Paulo - SP</span></div>
-        <p id="tracking">Acompanhe cada etapa<br />com transparência.</p>
+        <a className="footer-tracking" href="#tracking">Acompanhe cada etapa<br />com transparência.</a>
         <p id="manager">AutoSync.<br />Movimento faz bem.</p>
       </footer>
     </div>
