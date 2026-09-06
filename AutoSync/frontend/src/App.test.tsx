@@ -6,11 +6,13 @@ import App from "./App";
 
 const fetchMock = vi.fn();
 let anaRequestStatus = "PENDENTE";
+let joaoRequestStatus = "CONFIRMADO";
 
 beforeEach(() => {
   window.history.replaceState({}, "", "/");
   window.localStorage.clear();
   anaRequestStatus = "PENDENTE";
+  joaoRequestStatus = "CONFIRMADO";
   fetchMock.mockImplementation(async (input: string | URL, init?: RequestInit) => {
     const url = input.toString();
     const parsedUrl = new URL(url);
@@ -32,7 +34,7 @@ beforeEach(() => {
         email: null,
         phone: "11987654323",
         service_title: "Diagnóstico eletrônico",
-        status: "CONFIRMADO",
+        status: joaoRequestStatus,
         tracking_code: "ATS-00000003",
         created_at: "2026-09-03T10:00:00",
       };
@@ -87,15 +89,24 @@ beforeEach(() => {
       );
     }
 
-    if (parsedUrl.pathname.endsWith("/admin/requests/1/status")) {
+    const statusUpdateMatch = parsedUrl.pathname.match(/\/admin\/requests\/(\d+)\/status$/);
+    if (statusUpdateMatch) {
       expect(init?.method).toBe("PATCH");
       expect(init?.headers).toEqual({
         Authorization: "Bearer administrator-token",
         "Content-Type": "application/json",
       });
-      expect(JSON.parse(String(init?.body))).toEqual({ status: "CONFIRMADO" });
-      anaRequestStatus = "CONFIRMADO";
-      return new Response(JSON.stringify({ id: 1, status: anaRequestStatus }), { status: 200 });
+      const status = JSON.parse(String(init?.body)) as { status: string };
+      expect(["CONFIRMADO", "CANCELADO"]).toContain(status.status);
+      const requestId = Number(statusUpdateMatch[1]);
+      if (requestId === 1) {
+        anaRequestStatus = status.status;
+      } else if (requestId === 3) {
+        joaoRequestStatus = status.status;
+      } else {
+        throw new Error(`Unexpected request status update for ${requestId}.`);
+      }
+      return new Response(JSON.stringify({ id: requestId, status: status.status }), { status: 200 });
     }
 
     if (url.endsWith("/requests")) {
@@ -299,6 +310,36 @@ test("administrator can confirm a pending request and see refreshed feedback", a
   expect(await screen.findByRole("status")).toHaveTextContent("Solicitação de Ana Silva confirmada.");
   expect(await screen.findByText("Atendimento confirmado", { selector: "strong" })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Confirmar solicitação de Ana Silva" })).not.toBeInTheDocument();
+});
+
+test("administrator can cancel pending and confirmed requests with refreshed feedback", async () => {
+  const user = userEvent.setup();
+  window.history.replaceState({}, "", "/admin");
+  window.localStorage.setItem(
+    "autosync.administrator-session",
+    JSON.stringify({ accessToken: "administrator-token" }),
+  );
+  render(<App />);
+
+  await screen.findByText("Ana Silva");
+  await user.click(screen.getByRole("button", { name: "Cancelar solicitação de Ana Silva" }));
+
+  await waitFor(() => {
+    expect(screen.getByRole("status")).toHaveTextContent("Solicitação de Ana Silva cancelada.");
+  });
+  expect(await screen.findByText("Solicitação cancelada", { selector: "strong" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Cancelar solicitação de Ana Silva" })).not.toBeInTheDocument();
+
+  await user.type(screen.getByLabelText("Buscar por nome ou e-mail"), "João");
+  await user.click(screen.getByRole("button", { name: "Buscar" }));
+  expect(await screen.findByText("João Souza")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Cancelar solicitação de João Souza" }));
+
+  await waitFor(() => {
+    expect(screen.getByRole("status")).toHaveTextContent("Solicitação de João Souza cancelada.");
+  });
+  expect(await screen.findByText("Solicitação cancelada", { selector: "strong" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Cancelar solicitação de João Souza" })).not.toBeInTheDocument();
 });
 
 test("administrator can filter the queue and find a request without email by name", async () => {

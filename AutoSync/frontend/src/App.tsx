@@ -50,6 +50,8 @@ type AdministratorRequestStatusResponse = {
   status: RequestStatus;
 };
 
+type AdministratorRequestActionStatus = "CONFIRMADO" | "CANCELADO";
+
 type ApplicationPath = "/" | "/login" | "/admin";
 
 type AdministratorSession = {
@@ -239,7 +241,10 @@ function AdministratorPanel({ accessToken, onLogout }: AdministratorPanelProps) 
   const [queueError, setQueueError] = useState<string | null>(null);
   const [isLoadingQueue, setIsLoadingQueue] = useState(true);
   const [queueRefresh, setQueueRefresh] = useState(0);
-  const [requestBeingUpdated, setRequestBeingUpdated] = useState<number | null>(null);
+  const [requestStatusBeingUpdated, setRequestStatusBeingUpdated] = useState<{
+    requestId: number;
+    status: AdministratorRequestActionStatus;
+  } | null>(null);
   const [statusFeedback, setStatusFeedback] = useState<string | null>(null);
 
   useEffect(() => {
@@ -306,10 +311,16 @@ function AdministratorPanel({ accessToken, onLogout }: AdministratorPanelProps) 
     setPage(1);
   }
 
-  async function confirmRequest(request: AdministratorRequestSummary) {
+  async function updateRequestStatus(
+    request: AdministratorRequestSummary,
+    nextStatus: AdministratorRequestActionStatus,
+  ) {
+    const action = nextStatus === "CONFIRMADO"
+      ? { infinitive: "confirmar", pastParticiple: "confirmada" }
+      : { infinitive: "cancelar", pastParticiple: "cancelada" };
     setQueueError(null);
     setStatusFeedback(null);
-    setRequestBeingUpdated(request.id);
+    setRequestStatusBeingUpdated({ requestId: request.id, status: nextStatus });
 
     try {
       const response = await fetch(`${apiBaseUrl}/admin/requests/${request.id}/status`, {
@@ -318,19 +329,19 @@ function AdministratorPanel({ accessToken, onLogout }: AdministratorPanelProps) 
           Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ status: "CONFIRMADO" }),
+        body: JSON.stringify({ status: nextStatus }),
       });
       if (response.status === 401) {
         onLogout();
         return;
       }
       if (!response.ok) {
-        throw new Error("Não foi possível confirmar a solicitação.");
+        throw new Error(`Não foi possível ${action.infinitive} a solicitação.`);
       }
 
       const updatedRequest = (await response.json()) as AdministratorRequestStatusResponse;
-      if (updatedRequest.status !== "CONFIRMADO") {
-        throw new Error("Não foi possível confirmar a solicitação.");
+      if (updatedRequest.status !== nextStatus) {
+        throw new Error(`Não foi possível ${action.infinitive} a solicitação.`);
       }
 
       setRequestPage((currentPage) => currentPage ? {
@@ -341,14 +352,14 @@ function AdministratorPanel({ accessToken, onLogout }: AdministratorPanelProps) 
             : currentRequest
         )),
       } : currentPage);
-      setStatusFeedback(`Solicitação de ${request.name} confirmada.`);
+      setStatusFeedback(`Solicitação de ${request.name} ${action.pastParticiple}.`);
       setQueueRefresh((currentRefresh) => currentRefresh + 1);
     } catch (error) {
       setQueueError(
-        error instanceof Error ? error.message : "Não foi possível confirmar a solicitação.",
+        error instanceof Error ? error.message : `Não foi possível ${action.infinitive} a solicitação.`,
       );
     } finally {
-      setRequestBeingUpdated(null);
+      setRequestStatusBeingUpdated(null);
     }
   }
 
@@ -430,17 +441,36 @@ function AdministratorPanel({ accessToken, onLogout }: AdministratorPanelProps) 
                     </td>
                     <td>{formatRequestDate(request.created_at)}</td>
                     <td>
-                      {request.status === "PENDENTE" ? (
-                        <button
-                          aria-label={`Confirmar solicitação de ${request.name}`}
-                          className="admin-action admin-action--confirm"
-                          disabled={requestBeingUpdated === request.id}
-                          onClick={() => void confirmRequest(request)}
-                          type="button"
-                        >
-                          {requestBeingUpdated === request.id ? "Confirmando…" : "Confirmar"}
-                        </button>
-                      ) : <span className="admin-action__empty">—</span>}
+                      <div className="admin-actions">
+                        {request.status === "PENDENTE" ? (
+                          <button
+                            aria-label={`Confirmar solicitação de ${request.name}`}
+                            className="admin-action admin-action--confirm"
+                            disabled={requestStatusBeingUpdated?.requestId === request.id}
+                            onClick={() => void updateRequestStatus(request, "CONFIRMADO")}
+                            type="button"
+                          >
+                            {requestStatusBeingUpdated?.requestId === request.id
+                              && requestStatusBeingUpdated.status === "CONFIRMADO"
+                              ? "Confirmando…"
+                              : "Confirmar"}
+                          </button>
+                        ) : null}
+                        {request.status !== "CANCELADO" ? (
+                          <button
+                            aria-label={`Cancelar solicitação de ${request.name}`}
+                            className="admin-action admin-action--cancel"
+                            disabled={requestStatusBeingUpdated?.requestId === request.id}
+                            onClick={() => void updateRequestStatus(request, "CANCELADO")}
+                            type="button"
+                          >
+                            {requestStatusBeingUpdated?.requestId === request.id
+                              && requestStatusBeingUpdated.status === "CANCELADO"
+                              ? "Cancelando…"
+                              : "Cancelar"}
+                          </button>
+                        ) : <span className="admin-action__empty">—</span>}
+                      </div>
                     </td>
                   </tr>
                 ))}
