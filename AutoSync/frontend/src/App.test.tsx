@@ -11,9 +11,76 @@ beforeEach(() => {
   window.localStorage.clear();
   fetchMock.mockImplementation(async (input: string | URL, init?: RequestInit) => {
     const url = input.toString();
+    const parsedUrl = new URL(url);
     if (url.endsWith("/services")) {
       return new Response(
         JSON.stringify([{ id: 1, title: "Troca de óleo", duration_minutes: 45 }]),
+        { status: 200 },
+      );
+    }
+
+    if (parsedUrl.pathname.endsWith("/admin/requests")) {
+      expect(init?.headers).toEqual({ Authorization: "Bearer administrator-token" });
+      const status = parsedUrl.searchParams.get("status");
+      const search = parsedUrl.searchParams.get("q");
+      const page = parsedUrl.searchParams.get("page");
+      const joaoRequest = {
+        id: 3,
+        name: "João Souza",
+        email: null,
+        phone: "11987654323",
+        service_title: "Diagnóstico eletrônico",
+        status: "CONFIRMADO",
+        tracking_code: "ATS-00000003",
+        created_at: "2026-09-03T10:00:00",
+      };
+
+      if (status === "CONFIRMADO" || search === "João") {
+        return new Response(
+          JSON.stringify({ items: [joaoRequest], page: 1, page_size: 10, total: 1, total_pages: 1 }),
+          { status: 200 },
+        );
+      }
+
+      if (page === "2") {
+        return new Response(
+          JSON.stringify({
+            items: [{
+              id: 2,
+              name: "Bruna Lima",
+              email: "bruna@example.com",
+              phone: "11987654322",
+              service_title: "Revisão preventiva",
+              status: "PENDENTE",
+              tracking_code: "ATS-00000002",
+              created_at: "2026-09-02T10:00:00",
+            }],
+            page: 2,
+            page_size: 10,
+            total: 11,
+            total_pages: 2,
+          }),
+          { status: 200 },
+        );
+      }
+
+      return new Response(
+        JSON.stringify({
+          items: [{
+            id: 1,
+            name: "Ana Silva",
+            email: "ana@example.com",
+            phone: "11987654321",
+            service_title: "Troca de óleo",
+            status: "PENDENTE",
+            tracking_code: "ATS-00000001",
+            created_at: "2026-09-01T10:00:00",
+          }],
+          page: 1,
+          page_size: 10,
+          total: 11,
+          total_pages: 2,
+        }),
         { status: 200 },
       );
     }
@@ -179,4 +246,51 @@ test("administrator can log in, access the protected panel, and log out", async 
   expect(await screen.findByRole("heading", { name: "Acesso do gestor" })).toBeInTheDocument();
   expect(window.localStorage.getItem("autosync.administrator-session")).toBeNull();
   expect(window.location.pathname).toBe("/login");
+});
+
+test("administrator can move through the paginated request queue", async () => {
+  const user = userEvent.setup();
+  window.history.replaceState({}, "", "/admin");
+  window.localStorage.setItem(
+    "autosync.administrator-session",
+    JSON.stringify({ accessToken: "administrator-token" }),
+  );
+  render(<App />);
+
+  expect(await screen.findByText("Ana Silva")).toBeInTheDocument();
+  expect(screen.getByText("Página 1 de 2")).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "Próxima página" }));
+
+  expect(await screen.findByText("Bruna Lima")).toBeInTheDocument();
+  expect(screen.getByText("Página 2 de 2")).toBeInTheDocument();
+  await waitFor(() => {
+    const requestUrl = new URL(String(fetchMock.mock.calls.at(-1)?.[0]));
+    expect(requestUrl.searchParams.get("page")).toBe("2");
+    expect(requestUrl.searchParams.get("page_size")).toBe("10");
+  });
+});
+
+test("administrator can filter the queue and find a request without email by name", async () => {
+  const user = userEvent.setup();
+  window.history.replaceState({}, "", "/admin");
+  window.localStorage.setItem(
+    "autosync.administrator-session",
+    JSON.stringify({ accessToken: "administrator-token" }),
+  );
+  render(<App />);
+
+  await screen.findByText("Ana Silva");
+  await user.selectOptions(screen.getByLabelText("Filtrar por status"), "CONFIRMADO");
+  expect(await screen.findByText("João Souza")).toBeInTheDocument();
+  expect(screen.getByText("Sem e-mail")).toBeInTheDocument();
+
+  await user.type(screen.getByLabelText("Buscar por nome ou e-mail"), "João");
+  await user.click(screen.getByRole("button", { name: "Buscar" }));
+
+  await waitFor(() => {
+    const requestUrl = new URL(String(fetchMock.mock.calls.at(-1)?.[0]));
+    expect(requestUrl.searchParams.get("status")).toBe("CONFIRMADO");
+    expect(requestUrl.searchParams.get("q")).toBe("João");
+  });
 });

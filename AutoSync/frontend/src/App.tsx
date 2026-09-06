@@ -14,14 +14,35 @@ type RequestConfirmation = {
   created_at: string;
 };
 
+type RequestStatus = "PENDENTE" | "CONFIRMADO" | "CANCELADO";
+
 type TrackingResult = {
   tracking_code: string;
-  status: "PENDENTE" | "CONFIRMADO" | "CANCELADO";
+  status: RequestStatus;
   service_title: string;
   vehicle_make: string;
   vehicle_model: string;
   created_at: string;
   updated_at: string;
+};
+
+type AdministratorRequestSummary = {
+  id: number;
+  name: string;
+  email: string | null;
+  phone: string;
+  service_title: string;
+  status: RequestStatus;
+  tracking_code: string;
+  created_at: string;
+};
+
+type AdministratorRequestPage = {
+  items: AdministratorRequestSummary[];
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
 };
 
 type ApplicationPath = "/" | "/login" | "/admin";
@@ -76,7 +97,7 @@ function displayDuration(durationMinutes: number): string {
   return minutes ? `A partir de ${hours}h ${minutes}min` : `A partir de ${hours} hora`;
 }
 
-function displayStatus(status: TrackingResult["status"]): string {
+function displayStatus(status: RequestStatus): string {
   return {
     PENDENTE: "Pendente de confirmação",
     CONFIRMADO: "Atendimento confirmado",
@@ -193,10 +214,92 @@ function LoginPage({ onAuthenticated, onNavigateHome }: LoginPageProps) {
 }
 
 type AdministratorPanelProps = {
+  accessToken: string;
   onLogout: () => void;
 };
 
-function AdministratorPanel({ onLogout }: AdministratorPanelProps) {
+function formatRequestDate(date: string): string {
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(new Date(date));
+}
+
+function AdministratorPanel({ accessToken, onLogout }: AdministratorPanelProps) {
+  const [requestPage, setRequestPage] = useState<AdministratorRequestPage | null>(null);
+  const [statusFilter, setStatusFilter] = useState<RequestStatus | "">("");
+  const [searchInput, setSearchInput] = useState("");
+  const [activeSearch, setActiveSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [queueError, setQueueError] = useState<string | null>(null);
+  const [isLoadingQueue, setIsLoadingQueue] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+    const query = new URLSearchParams({ page: String(page), page_size: "10" });
+    if (statusFilter) {
+      query.set("status", statusFilter);
+    }
+    if (activeSearch) {
+      query.set("q", activeSearch);
+    }
+
+    async function loadRequestQueue() {
+      setIsLoadingQueue(true);
+      setQueueError(null);
+
+      try {
+        const response = await fetch(`${apiBaseUrl}/admin/requests?${query}`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (response.status === 401) {
+          if (isMounted) {
+            onLogout();
+          }
+          return;
+        }
+        if (!response.ok) {
+          throw new Error("Não foi possível carregar a fila de solicitações.");
+        }
+
+        const loadedPage = (await response.json()) as AdministratorRequestPage;
+        if (isMounted) {
+          setRequestPage(loadedPage);
+        }
+      } catch (error) {
+        if (isMounted) {
+          setQueueError(
+            error instanceof Error
+              ? error.message
+              : "Não foi possível carregar a fila de solicitações.",
+          );
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingQueue(false);
+        }
+      }
+    }
+
+    void loadRequestQueue();
+    return () => {
+      isMounted = false;
+    };
+  }, [accessToken, activeSearch, onLogout, page, statusFilter]);
+
+  function updateStatusFilter(nextStatus: RequestStatus | "") {
+    setStatusFilter(nextStatus);
+    setPage(1);
+  }
+
+  function submitSearch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setActiveSearch(searchInput.trim());
+    setPage(1);
+  }
+
+  const totalPages = Math.max(requestPage?.total_pages ?? 1, 1);
+
   return (
     <main className="admin-shell">
       <header className="admin-header">
@@ -206,10 +309,88 @@ function AdministratorPanel({ onLogout }: AdministratorPanelProps) {
         </a>
         <button className="admin-header__logout" onClick={onLogout} type="button">Sair</button>
       </header>
-      <section className="admin-welcome" aria-labelledby="admin-title">
+      <section className="admin-queue" aria-labelledby="admin-title">
         <p className="eyebrow">SESSÃO ATIVA</p>
         <h1 id="admin-title">Painel administrativo</h1>
-        <p>A sessão está protegida. A fila de solicitações será adicionada no próximo bloco.</p>
+        <p className="admin-queue__intro">
+          Acompanhe as solicitações recebidas e encontre rapidamente quem precisa de retorno.
+        </p>
+
+        <div className="admin-toolbar">
+          <label>
+            Filtrar por status
+            <select
+              onChange={(event) => updateStatusFilter(event.target.value as RequestStatus | "")}
+              value={statusFilter}
+            >
+              <option value="">Todos os status</option>
+              <option value="PENDENTE">Pendente de confirmação</option>
+              <option value="CONFIRMADO">Atendimento confirmado</option>
+              <option value="CANCELADO">Solicitação cancelada</option>
+            </select>
+          </label>
+          <form className="admin-toolbar__search" onSubmit={submitSearch}>
+            <label>
+              Buscar por nome ou e-mail
+              <input
+                onChange={(event) => setSearchInput(event.target.value)}
+                placeholder="Ex.: Ana Silva"
+                value={searchInput}
+              />
+            </label>
+            <button className="button" type="submit">Buscar</button>
+          </form>
+        </div>
+
+        {queueError ? <p className="notice notice--error" role="alert">{queueError}</p> : null}
+        {isLoadingQueue ? <p className="notice">Carregando solicitações…</p> : null}
+        {!isLoadingQueue && !queueError && requestPage?.items.length === 0 ? (
+          <p className="notice">Nenhuma solicitação encontrada.</p>
+        ) : null}
+        {!isLoadingQueue && !queueError && requestPage?.items.length ? (
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <caption>{requestPage.total} solicitações encontradas</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Cliente</th>
+                  <th scope="col">Serviço</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">Recebido</th>
+                </tr>
+              </thead>
+              <tbody>
+                {requestPage.items.map((request) => (
+                  <tr key={request.id}>
+                    <td>
+                      <strong>{request.name}</strong>
+                      <span>{request.email ?? "Sem e-mail"}</span>
+                    </td>
+                    <td>{request.service_title}</td>
+                    <td>
+                      <strong className={`tracking-status tracking-status--${request.status.toLowerCase()}`}>
+                        {displayStatus(request.status)}
+                      </strong>
+                    </td>
+                    <td>{formatRequestDate(request.created_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+
+        {!isLoadingQueue && !queueError && requestPage?.total ? (
+          <nav className="admin-pagination" aria-label="Paginação das solicitações">
+            <button disabled={page === 1} onClick={() => setPage(page - 1)} type="button">
+              Página anterior
+            </button>
+            <span>Página {page} de {totalPages}</span>
+            <button disabled={page >= totalPages} onClick={() => setPage(page + 1)} type="button">
+              Próxima página
+            </button>
+          </nav>
+        ) : null}
       </section>
     </main>
   );
@@ -422,7 +603,12 @@ function App() {
     if (!administratorSession) {
       return null;
     }
-    return <AdministratorPanel onLogout={logoutAdministrator} />;
+    return (
+      <AdministratorPanel
+        accessToken={administratorSession.accessToken}
+        onLogout={logoutAdministrator}
+      />
+    );
   }
 
   return (

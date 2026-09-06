@@ -16,6 +16,25 @@ class AccessTokenResponse(BaseModel):
     expires_in: int
 
 
+class AdministratorRequestSummary(BaseModel):
+    id: int
+    name: str
+    email: EmailStr | None
+    phone: str
+    service_title: str
+    status: Literal["PENDENTE", "CONFIRMADO", "CANCELADO"]
+    tracking_code: str
+    created_at: datetime
+
+
+class AdministratorRequestPage(BaseModel):
+    items: list[AdministratorRequestSummary]
+    page: int
+    page_size: int
+    total: int
+    total_pages: int
+
+
 class PublicServiceResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
