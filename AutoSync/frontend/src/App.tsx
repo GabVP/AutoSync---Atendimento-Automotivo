@@ -24,6 +24,12 @@ type TrackingResult = {
   updated_at: string;
 };
 
+type ApplicationPath = "/" | "/login" | "/admin";
+
+type AdministratorSession = {
+  accessToken: string;
+};
+
 type FormValues = {
   name: string;
   phone: string;
@@ -39,6 +45,7 @@ type FormValues = {
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1";
 const trackingCodePattern = /^ATS-[A-F0-9]{8}$/;
+const administratorSessionStorageKey = "autosync.administrator-session";
 
 const emptyForm: FormValues = {
   name: "",
@@ -77,6 +84,137 @@ function displayStatus(status: TrackingResult["status"]): string {
   }[status];
 }
 
+function currentApplicationPath(): ApplicationPath {
+  if (window.location.pathname === "/login") {
+    return "/login";
+  }
+  if (window.location.pathname === "/admin") {
+    return "/admin";
+  }
+  return "/";
+}
+
+function loadAdministratorSession(): AdministratorSession | null {
+  const storedSession = window.localStorage.getItem(administratorSessionStorageKey);
+  if (!storedSession) {
+    return null;
+  }
+
+  try {
+    const parsedSession = JSON.parse(storedSession) as AdministratorSession;
+    return parsedSession.accessToken ? parsedSession : null;
+  } catch {
+    window.localStorage.removeItem(administratorSessionStorageKey);
+    return null;
+  }
+}
+
+type LoginPageProps = {
+  onAuthenticated: (accessToken: string) => void;
+  onNavigateHome: () => void;
+};
+
+function LoginPage({ onAuthenticated, onNavigateHome }: LoginPageProps) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  async function submitLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setLoginError(null);
+    setIsLoggingIn(true);
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), password }),
+      });
+      if (!response.ok) {
+        throw new Error("E-mail ou senha inválidos. Tente novamente.");
+      }
+
+      const authenticatedSession = (await response.json()) as { access_token: string };
+      if (!authenticatedSession.access_token) {
+        throw new Error("Não foi possível iniciar sua sessão. Tente novamente.");
+      }
+
+      onAuthenticated(authenticatedSession.access_token);
+    } catch (error) {
+      setLoginError(
+        error instanceof Error ? error.message : "Não foi possível iniciar sua sessão. Tente novamente.",
+      );
+    } finally {
+      setIsLoggingIn(false);
+    }
+  }
+
+  return (
+    <main className="auth-shell">
+      <section className="auth-card" aria-labelledby="login-title">
+        <button className="auth-card__brand" onClick={onNavigateHome} type="button">
+          <span className="brand-mark" aria-hidden="true"><i /><i /></span>
+          <span><strong>AutoSync</strong><small>ÁREA ADMINISTRATIVA</small></span>
+        </button>
+        <p className="eyebrow">ACESSO RESTRITO</p>
+        <h1 id="login-title">Acesso do gestor</h1>
+        <p>Entre com as credenciais do administrador para acompanhar as solicitações.</p>
+        <form className="auth-form" onSubmit={submitLogin}>
+          <label>
+            E-mail
+            <input
+              autoComplete="email"
+              onChange={(event) => setEmail(event.target.value)}
+              required
+              type="email"
+              value={email}
+            />
+          </label>
+          <label>
+            Senha
+            <input
+              autoComplete="current-password"
+              onChange={(event) => setPassword(event.target.value)}
+              required
+              type="password"
+              value={password}
+            />
+          </label>
+          {loginError ? <p className="notice notice--error" role="alert">{loginError}</p> : null}
+          <button className="button" disabled={isLoggingIn} type="submit">
+            {isLoggingIn ? "Entrando…" : "Entrar"}
+          </button>
+        </form>
+        <button className="auth-card__back" onClick={onNavigateHome} type="button">← Voltar para a AutoSync</button>
+      </section>
+    </main>
+  );
+}
+
+type AdministratorPanelProps = {
+  onLogout: () => void;
+};
+
+function AdministratorPanel({ onLogout }: AdministratorPanelProps) {
+  return (
+    <main className="admin-shell">
+      <header className="admin-header">
+        <a className="brand" href="/" aria-label="AutoSync - início">
+          <span className="brand-mark" aria-hidden="true"><i /><i /></span>
+          <span><strong>AutoSync</strong><small>PAINEL ADMINISTRATIVO</small></span>
+        </a>
+        <button className="admin-header__logout" onClick={onLogout} type="button">Sair</button>
+      </header>
+      <section className="admin-welcome" aria-labelledby="admin-title">
+        <p className="eyebrow">SESSÃO ATIVA</p>
+        <h1 id="admin-title">Painel administrativo</h1>
+        <p>A sessão está protegida. A fila de solicitações será adicionada no próximo bloco.</p>
+      </section>
+    </main>
+  );
+}
+
 function App() {
   const [services, setServices] = useState<Service[]>([]);
   const [form, setForm] = useState<FormValues>(emptyForm);
@@ -89,8 +227,46 @@ function App() {
   const [trackingResult, setTrackingResult] = useState<TrackingResult | null>(null);
   const [trackingError, setTrackingError] = useState<string | null>(null);
   const [isTracking, setIsTracking] = useState(false);
+  const [currentPath, setCurrentPath] = useState<ApplicationPath>(currentApplicationPath);
+  const [administratorSession, setAdministratorSession] = useState<AdministratorSession | null>(
+    loadAdministratorSession,
+  );
+
+  function navigate(path: ApplicationPath, replace = false) {
+    window.history[replace ? "replaceState" : "pushState"]({}, "", path);
+    setCurrentPath(path);
+  }
+
+  function authenticateAdministrator(accessToken: string) {
+    const nextSession = { accessToken };
+    window.localStorage.setItem(administratorSessionStorageKey, JSON.stringify(nextSession));
+    setAdministratorSession(nextSession);
+    navigate("/admin");
+  }
+
+  function logoutAdministrator() {
+    window.localStorage.removeItem(administratorSessionStorageKey);
+    setAdministratorSession(null);
+    navigate("/login");
+  }
 
   useEffect(() => {
+    const syncPathWithBrowser = () => setCurrentPath(currentApplicationPath());
+    window.addEventListener("popstate", syncPathWithBrowser);
+    return () => window.removeEventListener("popstate", syncPathWithBrowser);
+  }, []);
+
+  useEffect(() => {
+    if (currentPath === "/admin" && !administratorSession) {
+      navigate("/login", true);
+    }
+  }, [administratorSession, currentPath]);
+
+  useEffect(() => {
+    if (currentPath !== "/") {
+      return;
+    }
+
     let isMounted = true;
 
     async function loadServices() {
@@ -114,7 +290,7 @@ function App() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [currentPath]);
 
   const selectedService = useMemo(
     () => services.find((service) => service.id === Number(form.service_id)),
@@ -233,6 +409,22 @@ function App() {
     }
   }
 
+  if (currentPath === "/login") {
+    return (
+      <LoginPage
+        onAuthenticated={authenticateAdministrator}
+        onNavigateHome={() => navigate("/")}
+      />
+    );
+  }
+
+  if (currentPath === "/admin") {
+    if (!administratorSession) {
+      return null;
+    }
+    return <AdministratorPanel onLogout={logoutAdministrator} />;
+  }
+
   return (
     <div className="site-shell">
       <header className="topbar">
@@ -244,7 +436,15 @@ function App() {
           <a href="#services">Serviços</a>
           <a href="#how-it-works">Como funciona</a>
           <a href="#tracking">Acompanhar pedido</a>
-          <a href="#manager">Área do gestor</a>
+          <a
+            href={administratorSession ? "/admin" : "/login"}
+            onClick={(event) => {
+              event.preventDefault();
+              navigate(administratorSession ? "/admin" : "/login");
+            }}
+          >
+            Área do gestor
+          </a>
         </nav>
         <a className="button button--small" href="#request">▣&nbsp; Solicitar atendimento</a>
       </header>

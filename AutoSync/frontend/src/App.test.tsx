@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
@@ -7,6 +7,8 @@ import App from "./App";
 const fetchMock = vi.fn();
 
 beforeEach(() => {
+  window.history.replaceState({}, "", "/");
+  window.localStorage.clear();
   fetchMock.mockImplementation(async (input: string | URL, init?: RequestInit) => {
     const url = input.toString();
     if (url.endsWith("/services")) {
@@ -51,6 +53,18 @@ beforeEach(() => {
 
     if (url.endsWith("/requests/ATS-FFFFFFFF")) {
       return new Response(JSON.stringify({ detail: "Not found" }), { status: 404 });
+    }
+
+    if (url.endsWith("/auth/login")) {
+      expect(init?.method).toBe("POST");
+      const credentials = JSON.parse(String(init?.body)) as { email: string; password: string };
+      if (credentials.email === "admin@autosync.example.com" && credentials.password === "autosync-demo") {
+        return new Response(
+          JSON.stringify({ access_token: "administrator-token", token_type: "bearer", expires_in: 3600 }),
+          { status: 200 },
+        );
+      }
+      return new Response(JSON.stringify({ detail: "Invalid credentials" }), { status: 401 });
     }
 
     return new Response(null, { status: 404 });
@@ -136,4 +150,33 @@ test("visitor receives feedback before a malformed tracking code is sent", async
     await screen.findByText("Use o código no formato ATS-XXXXXXXX para acompanhar sua solicitação."),
   ).toBeInTheDocument();
   expect(fetchMock).toHaveBeenCalledTimes(1);
+});
+
+test("unauthenticated access to the administrative route redirects to login", async () => {
+  window.history.replaceState({}, "", "/admin");
+  render(<App />);
+
+  expect(await screen.findByRole("heading", { name: "Acesso do gestor" })).toBeInTheDocument();
+  await waitFor(() => expect(window.location.pathname).toBe("/login"));
+  expect(screen.queryByRole("heading", { name: "Painel administrativo" })).not.toBeInTheDocument();
+});
+
+test("administrator can log in, access the protected panel, and log out", async () => {
+  const user = userEvent.setup();
+  window.history.replaceState({}, "", "/login");
+  render(<App />);
+
+  await user.type(screen.getByLabelText("E-mail"), "admin@autosync.example.com");
+  await user.type(screen.getByLabelText("Senha"), "autosync-demo");
+  await user.click(screen.getByRole("button", { name: "Entrar" }));
+
+  expect(await screen.findByRole("heading", { name: "Painel administrativo" })).toBeInTheDocument();
+  expect(window.localStorage.getItem("autosync.administrator-session")).toContain("administrator-token");
+  expect(window.location.pathname).toBe("/admin");
+
+  await user.click(screen.getByRole("button", { name: "Sair" }));
+
+  expect(await screen.findByRole("heading", { name: "Acesso do gestor" })).toBeInTheDocument();
+  expect(window.localStorage.getItem("autosync.administrator-session")).toBeNull();
+  expect(window.location.pathname).toBe("/login");
 });
