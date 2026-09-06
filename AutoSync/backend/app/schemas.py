@@ -35,6 +35,15 @@ class AdministratorRequestPage(BaseModel):
     total_pages: int
 
 
+class AdministratorRequestStatusUpdate(BaseModel):
+    status: Literal["PENDENTE", "CONFIRMADO", "CANCELADO"]
+
+
+class AdministratorRequestStatusResponse(BaseModel):
+    id: int
+    status: Literal["PENDENTE", "CONFIRMADO", "CANCELADO"]
+
+
 class PublicServiceResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
