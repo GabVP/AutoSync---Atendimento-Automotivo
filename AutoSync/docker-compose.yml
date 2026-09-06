@@ -20,6 +20,8 @@ services:
     build: ./backend
     environment:
       DATABASE_URL: mysql+pymysql://${MYSQL_USER}:${MYSQL_PASSWORD}@db:3306/${MYSQL_DATABASE}
+      JWT_SECRET_KEY: "${JWT_SECRET_KEY:-local-development-secret-change-before-deploying}"
+      JWT_ACCESS_TOKEN_EXPIRE_MINUTES: "${JWT_ACCESS_TOKEN_EXPIRE_MINUTES:-60}"
     ports:
       - "8000:8000"
     depends_on:
