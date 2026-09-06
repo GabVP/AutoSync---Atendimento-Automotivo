@@ -1,16 +1,55 @@
 from math import ceil
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.database import get_session
 from app.models import Administrator, AttendanceRequest, Service
-from app.schemas import AdministratorRequestPage, AdministratorRequestSummary
+from app.request_status import InvalidRequestStatusTransition, transition_request_status
+from app.schemas import (
+    AdministratorRequestPage,
+    AdministratorRequestStatusResponse,
+    AdministratorRequestStatusUpdate,
+    AdministratorRequestSummary,
+)
 from app.security import get_current_administrator
 
 router = APIRouter(prefix="/admin/requests", tags=["administrator requests"])
+
+
+@router.patch("/{request_id}/status", response_model=AdministratorRequestStatusResponse)
+def update_administrator_request_status(
+    request_id: int,
+    payload: AdministratorRequestStatusUpdate,
+    session: Session = Depends(get_session),
+    _: Administrator = Depends(get_current_administrator),
+) -> AdministratorRequestStatusResponse:
+    attendance_request = session.get(AttendanceRequest, request_id)
+    if attendance_request is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="The requested attendance request was not found.",
+        )
+
+    try:
+        attendance_request.status = transition_request_status(
+            attendance_request.status,
+            payload.status,
+        )
+    except InvalidRequestStatusTransition as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The requested status transition is not allowed.",
+        ) from error
+
+    session.commit()
+    session.refresh(attendance_request)
+    return AdministratorRequestStatusResponse(
+        id=attendance_request.id,
+        status=attendance_request.status,
+    )
 
 
 @router.get("", response_model=AdministratorRequestPage)
