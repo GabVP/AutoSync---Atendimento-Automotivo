@@ -2,7 +2,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
-from app.models import Service
+from app.models import Administrator, Service
+from app.security import hash_password
 
 DEMO_SERVICES = (
     ("Troca de óleo", 45),
@@ -10,6 +11,8 @@ DEMO_SERVICES = (
     ("Alinhamento e balanceamento", 60),
     ("Diagnóstico eletrônico", 75),
 )
+DEMO_ADMIN_EMAIL = "admin@autosync.example.com"
+DEMO_ADMIN_PASSWORD = "autosync-demo"
 
 
 def seed_demo_data(session: Session) -> None:
@@ -19,6 +22,16 @@ def seed_demo_data(session: Session) -> None:
         for title, duration_minutes in DEMO_SERVICES
         if title not in existing_titles
     )
+    existing_administrator = session.scalar(
+        select(Administrator).where(Administrator.email == DEMO_ADMIN_EMAIL)
+    )
+    if existing_administrator is None:
+        session.add(
+            Administrator(
+                email=DEMO_ADMIN_EMAIL,
+                password_hash=hash_password(DEMO_ADMIN_PASSWORD),
+            )
+        )
     session.commit()
 
 
