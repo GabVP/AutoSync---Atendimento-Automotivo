@@ -107,3 +107,25 @@ Também não foi adotada a ideia de uma agenda automática em blocos fixos. Uma
 troca de óleo de 45 minutos deixaria tempo ocioso ou criaria uma alocação
 imprecisa. A decisão foi modelar intervalos livres em minutos e manter a
 confirmação final com a administração, mesmo quando a API oferece uma sugestão.
+
+### Correções humanas de lacunas da implementação assistida por IA
+
+Nos testes de uso humano, identifiquei que o código inicialmente produzido com
+apoio da IA estava incompleto em fluxos administrativos importantes. As
+correções foram definidas, implementadas e validadas sob revisão humana:
+
+- O painel permitia agendar, mas não reagendar um atendimento já confirmado.
+  Foi adicionado o controle de reagendamento com as mesmas validações de
+  disponibilidade.
+- A tentativa de iniciar um atendimento antes do horário retornava uma mensagem
+  pouco clara e poderia esconder a ação de nova tentativa. O erro passou a
+  informar a data e a hora permitidas, mantendo o controle disponível.
+- O cancelamento alterava apenas o status principal e deixava visíveis o estado
+  `AGENDADO` e os dados de alocação. A correção limpa estado operacional,
+  período, box e responsável tanto na persistência quanto no painel.
+- Falhas ao carregar ou confirmar um agendamento podiam ocultar o formulário.
+  O formulário agora permanece disponível após erro de envio e oferece
+  `Tentar novamente` quando os dados de preparação não carregam.
+- A API já aceitava reativar serviços, boxes e funcionários com
+  `is_active: true`, mas o painel não oferecia essa ação. Foram incluídos
+  controles de reativação, feedback e testes para os três tipos de cadastro.
