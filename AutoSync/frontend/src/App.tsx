@@ -276,7 +276,7 @@ function LoginPage({ onAuthenticated, onNavigateHome }: LoginPageProps) {
   return (
     <main className="auth-shell">
       <section className="auth-card" aria-labelledby="login-title">
-        <button className="auth-card__brand" onClick={onNavigateHome} type="button">
+        <button className="brand auth-card__brand" onClick={onNavigateHome} type="button">
           <span className="brand-mark" aria-hidden="true"><i /><i /></span>
           <span><strong>AutoSync</strong><small>ÁREA ADMINISTRATIVA</small></span>
         </button>
