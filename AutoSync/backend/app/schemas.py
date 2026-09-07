@@ -54,6 +54,33 @@ class AdministratorSchedulingSuggestionResponse(BaseModel):
     scheduled_end_at: datetime
 
 
+class AdministratorSchedulingConfirmationRequest(BaseModel):
+    workshop_box_id: int = Field(ge=1)
+    employee_id: int = Field(ge=1)
+    scheduled_start_at: datetime
+
+    @field_validator("scheduled_start_at")
+    @classmethod
+    def scheduled_start_must_use_local_minute_precision(cls, value: datetime) -> datetime:
+        if value.tzinfo is not None:
+            raise ValueError("Use a local date and time without a timezone offset.")
+        if value.second or value.microsecond:
+            raise ValueError("Scheduling must start at an exact minute.")
+        return value
+
+
+class AdministratorSchedulingConfirmationResponse(BaseModel):
+    id: int
+    status: Literal["CONFIRMADO"]
+    operational_status: Literal["AGENDADO"]
+    workshop_box_id: int
+    workshop_box_label: str
+    employee_id: int
+    employee_name: str
+    scheduled_start_at: datetime
+    scheduled_end_at: datetime
+
+
 class AdministratorServiceCreate(BaseModel):
     title: str = Field(min_length=2, max_length=120)
     duration_minutes: int = Field(ge=1, le=480)

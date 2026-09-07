@@ -9,8 +9,15 @@ from sqlalchemy.orm import Session
 from app.database import get_session
 from app.models import Administrator, AttendanceRequest, Employee, Service, WorkshopBox
 from app.request_status import InvalidRequestStatusTransition, transition_request_status
-from app.scheduling import ScheduledAllocation, find_nearest_available_slot
+from app.scheduling import (
+    InvalidScheduleInterval,
+    ScheduledAllocation,
+    calculate_scheduled_end_at,
+    find_nearest_available_slot,
+)
 from app.schemas import (
+    AdministratorSchedulingConfirmationRequest,
+    AdministratorSchedulingConfirmationResponse,
     AdministratorRequestPage,
     AdministratorRequestStatusResponse,
     AdministratorRequestStatusUpdate,
@@ -20,6 +27,17 @@ from app.schemas import (
 from app.security import get_current_administrator
 
 router = APIRouter(prefix="/admin/requests", tags=["administrator requests"])
+
+
+def _confirmed_allocation_filters() -> tuple:
+    return (
+        AttendanceRequest.status == "CONFIRMADO",
+        AttendanceRequest.operational_status != "CONCLUÍDO",
+        AttendanceRequest.workshop_box_id.is_not(None),
+        AttendanceRequest.employee_id.is_not(None),
+        AttendanceRequest.scheduled_start_at.is_not(None),
+        AttendanceRequest.scheduled_end_at.is_not(None),
+    )
 
 
 @router.get(
@@ -66,14 +84,7 @@ def suggest_administrator_request_scheduling(
                 AttendanceRequest.employee_id,
                 AttendanceRequest.scheduled_start_at,
                 AttendanceRequest.scheduled_end_at,
-            ).where(
-                AttendanceRequest.status == "CONFIRMADO",
-                AttendanceRequest.operational_status != "CONCLUÍDO",
-                AttendanceRequest.workshop_box_id.is_not(None),
-                AttendanceRequest.employee_id.is_not(None),
-                AttendanceRequest.scheduled_start_at.is_not(None),
-                AttendanceRequest.scheduled_end_at.is_not(None),
-            )
+            ).where(*_confirmed_allocation_filters())
         )
     ]
     suggestion = find_nearest_available_slot(
@@ -108,6 +119,105 @@ def suggest_administrator_request_scheduling(
     )
 
 
+@router.post(
+    "/{request_id}/schedule",
+    response_model=AdministratorSchedulingConfirmationResponse,
+)
+def confirm_administrator_request_schedule(
+    request_id: int,
+    payload: AdministratorSchedulingConfirmationRequest,
+    session: Session = Depends(get_session),
+    _: Administrator = Depends(get_current_administrator),
+) -> AdministratorSchedulingConfirmationResponse:
+    attendance_request = session.get(AttendanceRequest, request_id)
+    if attendance_request is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="The requested attendance request was not found.",
+        )
+    if attendance_request.status != "PENDENTE":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only pending requests can be scheduled.",
+        )
+    if payload.scheduled_start_at < datetime.now():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="The selected interval must start in the future.",
+        )
+
+    try:
+        scheduled_end_at = calculate_scheduled_end_at(
+            payload.scheduled_start_at,
+            attendance_request.service.duration_minutes,
+        )
+    except InvalidScheduleInterval as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(error),
+        ) from error
+
+    workshop_box = session.scalar(
+        select(WorkshopBox).where(WorkshopBox.id == payload.workshop_box_id).with_for_update()
+    )
+    employee = session.scalar(
+        select(Employee).where(Employee.id == payload.employee_id).with_for_update()
+    )
+    if workshop_box is None or employee is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="The selected workshop resources were not found.",
+        )
+    if not workshop_box.is_active or not employee.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The selected workshop resources must be active.",
+        )
+
+    conflicting_request_id = session.scalar(
+        select(AttendanceRequest.id)
+        .where(
+            *_confirmed_allocation_filters(),
+            AttendanceRequest.scheduled_start_at < scheduled_end_at,
+            AttendanceRequest.scheduled_end_at > payload.scheduled_start_at,
+            or_(
+                AttendanceRequest.workshop_box_id == workshop_box.id,
+                AttendanceRequest.employee_id == employee.id,
+            ),
+        )
+        .limit(1)
+    )
+    if conflicting_request_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The selected workshop resources are already allocated in this interval.",
+        )
+
+    attendance_request.status = transition_request_status(
+        attendance_request.status,
+        "CONFIRMADO",
+    )
+    attendance_request.operational_status = "AGENDADO"
+    attendance_request.workshop_box_id = workshop_box.id
+    attendance_request.employee_id = employee.id
+    attendance_request.scheduled_start_at = payload.scheduled_start_at
+    attendance_request.scheduled_end_at = scheduled_end_at
+    session.commit()
+    session.refresh(attendance_request)
+
+    return AdministratorSchedulingConfirmationResponse(
+        id=attendance_request.id,
+        status="CONFIRMADO",
+        operational_status="AGENDADO",
+        workshop_box_id=workshop_box.id,
+        workshop_box_label=workshop_box.label,
+        employee_id=employee.id,
+        employee_name=employee.name,
+        scheduled_start_at=attendance_request.scheduled_start_at,
+        scheduled_end_at=attendance_request.scheduled_end_at,
+    )
+
+
 @router.patch("/{request_id}/status", response_model=AdministratorRequestStatusResponse)
 def update_administrator_request_status(
     request_id: int,
@@ -120,6 +230,12 @@ def update_administrator_request_status(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="The requested attendance request was not found.",
+        )
+
+    if payload.status == "CONFIRMADO":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Requests must be scheduled before they can be confirmed.",
         )
 
     try:

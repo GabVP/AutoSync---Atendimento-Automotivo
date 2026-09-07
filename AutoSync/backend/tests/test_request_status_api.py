@@ -23,7 +23,7 @@ def test_request_status_update_requires_an_administrator_token() -> None:
     assert response.json() == {"detail": "Invalid or expired access token."}
 
 
-def test_administrator_can_persist_a_valid_request_status_transition() -> None:
+def test_status_endpoint_requires_scheduling_for_confirmation() -> None:
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -71,14 +71,16 @@ def test_administrator_can_persist_a_valid_request_status_transition() -> None:
             json={"status": "CONFIRMADO"},
         )
 
-        assert response.status_code == 200
-        assert response.json() == {"id": attendance_request.id, "status": "CONFIRMADO"}
+        assert response.status_code == 409
+        assert response.json() == {
+            "detail": "Requests must be scheduled before they can be confirmed."
+        }
         with Session(engine) as session:
             persisted_request = session.scalar(
                 select(AttendanceRequest).where(AttendanceRequest.id == attendance_request.id)
             )
             assert persisted_request is not None
-            assert persisted_request.status == "CONFIRMADO"
+            assert persisted_request.status == "PENDENTE"
     finally:
         app.dependency_overrides.clear()
 

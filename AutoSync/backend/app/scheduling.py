@@ -23,6 +23,28 @@ class SchedulingSuggestion:
     scheduled_end_at: datetime
 
 
+class InvalidScheduleInterval(ValueError):
+    """Raised when a manual schedule falls outside the workshop calendar."""
+
+
+def calculate_scheduled_end_at(
+    scheduled_start_at: datetime,
+    duration_minutes: int,
+) -> datetime:
+    """Validate a manual booking and calculate its end from the service duration."""
+    if duration_minutes <= 0:
+        raise InvalidScheduleInterval("The service duration must be positive.")
+    if scheduled_start_at.weekday() >= 5:
+        raise InvalidScheduleInterval("The workshop operates only on weekdays.")
+
+    scheduled_end_at = scheduled_start_at + timedelta(minutes=duration_minutes)
+    workday_start = datetime.combine(scheduled_start_at.date(), WORKDAY_START)
+    workday_end = datetime.combine(scheduled_start_at.date(), WORKDAY_END)
+    if scheduled_start_at < workday_start or scheduled_end_at > workday_end:
+        raise InvalidScheduleInterval("The selected interval is outside workshop hours.")
+    return scheduled_end_at
+
+
 def find_nearest_available_slot(
     *,
     requested_after: datetime,
