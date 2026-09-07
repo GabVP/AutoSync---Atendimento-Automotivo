@@ -7,6 +7,13 @@ import App from "./App";
 const fetchMock = vi.fn();
 let anaRequestStatus = "PENDENTE";
 let joaoRequestStatus = "CONFIRMADO";
+let anaRequestSchedule: {
+  operational_status: "AGENDADO";
+  scheduled_start_at: string;
+  scheduled_end_at: string;
+  workshop_box_label: string;
+  employee_name: string;
+} | null;
 let administratorServices: Array<{
   id: number;
   title: string;
@@ -38,6 +45,7 @@ beforeEach(() => {
   window.localStorage.clear();
   anaRequestStatus = "PENDENTE";
   joaoRequestStatus = "CONFIRMADO";
+  anaRequestSchedule = null;
   administratorServices = [{
     id: 1,
     title: "Troca de óleo",
@@ -168,6 +176,11 @@ beforeEach(() => {
         status: joaoRequestStatus,
         tracking_code: "ATS-00000003",
         created_at: "2026-09-03T10:00:00",
+        operational_status: "AGENDADO",
+        scheduled_start_at: "2026-09-08T10:00:00",
+        scheduled_end_at: "2026-09-08T10:45:00",
+        workshop_box_label: "Box 1",
+        employee_name: "Ana Martins",
       };
 
       if (status === "CONFIRMADO" || search === "João") {
@@ -189,6 +202,11 @@ beforeEach(() => {
               status: "PENDENTE",
               tracking_code: "ATS-00000002",
               created_at: "2026-09-02T10:00:00",
+              operational_status: null,
+              scheduled_start_at: null,
+              scheduled_end_at: null,
+              workshop_box_label: null,
+              employee_name: null,
             }],
             page: 2,
             page_size: 10,
@@ -210,12 +228,62 @@ beforeEach(() => {
             status: anaRequestStatus,
             tracking_code: "ATS-00000001",
             created_at: "2026-09-01T10:00:00",
+            operational_status: anaRequestSchedule?.operational_status ?? null,
+            scheduled_start_at: anaRequestSchedule?.scheduled_start_at ?? null,
+            scheduled_end_at: anaRequestSchedule?.scheduled_end_at ?? null,
+            workshop_box_label: anaRequestSchedule?.workshop_box_label ?? null,
+            employee_name: anaRequestSchedule?.employee_name ?? null,
           }],
           page: 1,
           page_size: 10,
           total: 11,
           total_pages: 2,
         }),
+        { status: 200 },
+      );
+    }
+
+    const schedulingSuggestionMatch = parsedUrl.pathname.match(/\/admin\/requests\/(\d+)\/scheduling-suggestion$/);
+    if (schedulingSuggestionMatch) {
+      expect(init?.headers).toEqual({ Authorization: "Bearer administrator-token" });
+      expect(Number(schedulingSuggestionMatch[1])).toBe(1);
+      return new Response(
+        JSON.stringify({
+          request_id: 1,
+          workshop_box_id: 1,
+          workshop_box_label: "Box 1",
+          employee_id: 1,
+          employee_name: "Ana Martins",
+          scheduled_start_at: "2026-09-08T08:00:00",
+          scheduled_end_at: "2026-09-08T08:45:00",
+        }),
+        { status: 200 },
+      );
+    }
+
+    const schedulingConfirmationMatch = parsedUrl.pathname.match(/\/admin\/requests\/(\d+)\/schedule$/);
+    if (schedulingConfirmationMatch) {
+      expect(init?.method).toBe("POST");
+      expect(init?.headers).toEqual({
+        Authorization: "Bearer administrator-token",
+        "Content-Type": "application/json",
+      });
+      expect(Number(schedulingConfirmationMatch[1])).toBe(1);
+      expect(JSON.parse(String(init?.body))).toEqual({
+        workshop_box_id: 1,
+        employee_id: 1,
+        scheduled_start_at: "2026-09-08T08:00",
+      });
+      anaRequestStatus = "CONFIRMADO";
+      anaRequestSchedule = {
+        operational_status: "AGENDADO",
+        scheduled_start_at: "2026-09-08T08:00:00",
+        scheduled_end_at: "2026-09-08T08:45:00",
+        workshop_box_label: "Box 1",
+        employee_name: "Ana Martins",
+      };
+      return new Response(
+        JSON.stringify({ id: 1, status: anaRequestStatus, ...anaRequestSchedule, workshop_box_id: 1, employee_id: 1 }),
         { status: 200 },
       );
     }
@@ -426,7 +494,7 @@ test("administrator can move through the paginated request queue", async () => {
   });
 });
 
-test("administrator can confirm a pending request and see refreshed feedback", async () => {
+test("administrator can schedule a pending request from the suggestion while reviewing manual choices", async () => {
   const user = userEvent.setup();
   window.history.replaceState({}, "", "/admin");
   window.localStorage.setItem(
@@ -436,11 +504,19 @@ test("administrator can confirm a pending request and see refreshed feedback", a
   render(<App />);
 
   await screen.findByText("Ana Silva");
-  await user.click(screen.getByRole("button", { name: "Confirmar solicitação de Ana Silva" }));
+  await user.click(screen.getByRole("button", { name: "Agendar solicitação de Ana Silva" }));
 
-  expect(await screen.findByRole("status")).toHaveTextContent("Solicitação de Ana Silva confirmada.");
+  expect(await screen.findByText("Sugestão: Box 1 com Ana Martins em 08/09/2026, 08:00."))
+    .toBeInTheDocument();
+  expect(screen.getByLabelText("Box do atendimento")).toHaveValue("1");
+  expect(screen.getByLabelText("Funcionário responsável")).toHaveValue("1");
+  expect(screen.getByLabelText("Início do atendimento")).toHaveValue("2026-09-08T08:00");
+  await user.click(screen.getByRole("button", { name: "Confirmar agendamento" }));
+
+  expect(await screen.findByRole("status")).toHaveTextContent("Solicitação de Ana Silva agendada.");
   expect(await screen.findByText("Atendimento confirmado", { selector: "strong" })).toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "Confirmar solicitação de Ana Silva" })).not.toBeInTheDocument();
+  expect(await screen.findByText("Agendado")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Agendar solicitação de Ana Silva" })).not.toBeInTheDocument();
 });
 
 test("administrator can cancel pending and confirmed requests with refreshed feedback", async () => {

@@ -136,7 +136,7 @@ textarea { resize: vertical; min-height: 89px; }
 .admin-toolbar__search label { width: min(100%, 350px); }
 .admin-toolbar__search .button { min-height: 37px; padding-inline: 16px; }
 .admin-table-wrap { overflow-x: auto; border: 1px solid #e3e6ea; border-radius: 8px; background: #fff; }
-.admin-table { width: 100%; min-width: 780px; border-collapse: collapse; text-align: left; }
+.admin-table { width: 100%; min-width: 960px; border-collapse: collapse; text-align: left; }
 .admin-table caption { padding: 14px 18px; border-bottom: 1px solid #e8eaed; color: #6e7783; font-size: 11px; font-weight: 700; text-align: left; }
 .admin-table th, .admin-table td { padding: 15px 18px; border-bottom: 1px solid #edf0f2; font-size: 12px; vertical-align: middle; }
 .admin-table th { color: #6f7782; font-size: 10px; letter-spacing: .7px; text-transform: uppercase; }
@@ -150,9 +150,22 @@ textarea { resize: vertical; min-height: 89px; }
 .admin-action--cancel { border-color: #bd1722; background: #bd1722; }
 .admin-action:disabled { opacity: .7; cursor: wait; }
 .admin-action__empty { color: #9aa1aa; }
+.admin-operational-status { display: inline-flex; margin-top: 6px; padding: 5px 8px; border-radius: 999px; font-size: 10px; }
+.admin-operational-status--agendado { color: #355776; background: #e1effa; }
+.admin-operational-status--em_andamento { color: #715716; background: #fff1cb; }
+.admin-operational-status--atrasado { color: #941824; background: #ffebed; }
+.admin-operational-status--concluído { color: #14653a; background: #dff5e7; }
+.admin-schedule-summary { color: #586270; font-size: 11px; line-height: 1.45; }
 .admin-pagination { display: flex; align-items: center; justify-content: end; gap: 12px; margin-top: 16px; color: #68717d; font-size: 12px; }
 .admin-pagination button { padding: 8px 11px; border: 1px solid #d9dee4; border-radius: 4px; background: #fff; color: #2b3139; font-size: 11px; font-weight: 750; }
 .admin-pagination button:disabled { opacity: .5; cursor: not-allowed; }
+.admin-scheduling { display: grid; gap: 18px; margin-top: 26px; padding: 24px; border: 1px solid #d8e3eb; border-radius: 8px; background: #f8fbfd; }
+.admin-scheduling__heading { max-width: 660px; }
+.admin-scheduling h2 { margin: 0; font-size: clamp(24px, 3vw, 32px); }
+.admin-scheduling__heading > p:last-child { margin: 8px 0 0; color: #68717d; font-size: 14px; line-height: 1.45; }
+.admin-scheduling__form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; align-items: end; }
+.admin-scheduling__suggestion { grid-column: 1 / -1; margin: 0; padding: 11px 12px; border-left: 3px solid #df0915; background: #fff; color: #384552; font-size: 12px; line-height: 1.45; }
+.admin-scheduling__actions { display: flex; flex-wrap: wrap; gap: 10px; }
 .admin-services { margin-top: 52px; padding-top: 42px; border-top: 1px solid #dfe3e7; }
 .admin-services__heading { max-width: 670px; margin-bottom: 20px; }
 .admin-services h2 { margin: 0; font-size: clamp(28px, 3vw, 38px); }
@@ -203,6 +216,7 @@ footer div b { margin-bottom: 2px; }
   .admin-toolbar__search { justify-content: stretch; }
   .admin-services__content { grid-template-columns: 1fr; }
   .admin-workshop-resources__grid { grid-template-columns: 1fr; }
+  .admin-scheduling__form { grid-template-columns: 1fr 1fr; }
   footer { grid-template-columns: 1.2fr 1fr 1fr; }
   footer p:last-child, footer .brand + p { display: none; }
 }
@@ -240,6 +254,8 @@ footer div b { margin-bottom: 2px; }
   .admin-service-form { padding: 18px 16px; }
   .admin-workshop-resources { margin-top: 38px; padding-top: 32px; }
   .admin-workshop-resource { padding: 18px 16px; }
+  .admin-scheduling { padding: 18px 16px; }
+  .admin-scheduling__form { grid-template-columns: 1fr; }
   .services-panel, .form-card { padding: 19px 16px; border-radius: 0; }
   h2, .form-card h2 { font-size: 29px; }
   .service-grid { grid-template-columns: 1fr; }
