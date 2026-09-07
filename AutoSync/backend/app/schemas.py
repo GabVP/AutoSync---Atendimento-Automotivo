@@ -44,6 +44,16 @@ class AdministratorRequestStatusResponse(BaseModel):
     status: Literal["PENDENTE", "CONFIRMADO", "CANCELADO"]
 
 
+class AdministratorSchedulingSuggestionResponse(BaseModel):
+    request_id: int
+    workshop_box_id: int
+    workshop_box_label: str
+    employee_id: int
+    employee_name: str
+    scheduled_start_at: datetime
+    scheduled_end_at: datetime
+
+
 class AdministratorServiceCreate(BaseModel):
     title: str = Field(min_length=2, max_length=120)
     duration_minutes: int = Field(ge=1, le=480)
