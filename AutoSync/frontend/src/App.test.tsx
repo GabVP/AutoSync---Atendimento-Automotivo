@@ -890,3 +890,28 @@ test("administrator can create, edit, and deactivate boxes and employees", async
   expect(await screen.findByText("Funcionário Bruno Costa desativado.")).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Desativar funcionário Bruno Costa" })).not.toBeInTheDocument();
 });
+
+test("administrator can reactivate inactive services, boxes, and employees", async () => {
+  const user = userEvent.setup();
+  window.history.replaceState({}, "", "/admin");
+  window.localStorage.setItem(
+    "autosync.administrator-session",
+    JSON.stringify({ accessToken: "administrator-token" }),
+  );
+  administratorServices[0].is_active = false;
+  administratorBoxes[0].is_active = false;
+  administratorEmployees[0].is_active = false;
+  render(<App />);
+
+  await user.click(await screen.findByRole("button", { name: "Reativar serviço Troca de óleo" }));
+  expect(await screen.findByText("Serviço Troca de óleo reativado.")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Desativar serviço Troca de óleo" })).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "Reativar box Box 1" }));
+  expect(await screen.findByText("Box 1 reativado.")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Desativar box Box 1" })).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "Reativar funcionário Ana Martins" }));
+  expect(await screen.findByText("Funcionário Ana Martins reativado.")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Desativar funcionário Ana Martins" })).toBeInTheDocument();
+});

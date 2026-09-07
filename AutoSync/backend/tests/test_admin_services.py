@@ -21,7 +21,7 @@ def test_administrator_services_require_a_bearer_token() -> None:
     assert response.headers["www-authenticate"] == "Bearer"
 
 
-def test_administrator_can_create_edit_list_and_deactivate_a_service() -> None:
+def test_administrator_can_create_edit_deactivate_and_reactivate_a_service() -> None:
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -91,6 +91,26 @@ def test_administrator_can_create_edit_list_and_deactivate_a_service() -> None:
             deactivate_response.json()
         ]
         assert client.get("/api/v1/services").json() == []
+
+        reactivate_response = client.patch(
+            "/api/v1/admin/services/1",
+            headers=headers,
+            json={"is_active": True},
+        )
+
+        assert reactivate_response.status_code == 200
+        assert reactivate_response.json() == {
+            "id": 1,
+            "title": "Higienização completa",
+            "duration_minutes": 90,
+            "is_active": True,
+        }
+        assert client.get("/api/v1/admin/services", headers=headers).json() == [
+            reactivate_response.json()
+        ]
+        assert client.get("/api/v1/services").json() == [
+            {"id": 1, "title": "Higienização completa", "duration_minutes": 90}
+        ]
     finally:
         app.dependency_overrides.clear()
 

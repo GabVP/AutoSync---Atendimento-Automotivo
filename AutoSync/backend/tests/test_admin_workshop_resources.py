@@ -24,7 +24,7 @@ def test_administrator_workshop_resources_require_a_bearer_token() -> None:
         assert response.headers["www-authenticate"] == "Bearer"
 
 
-def test_administrator_can_create_edit_list_and_deactivate_workshop_resources() -> None:
+def test_administrator_can_create_edit_deactivate_and_reactivate_workshop_resources() -> None:
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -138,5 +138,29 @@ def test_administrator_can_create_edit_list_and_deactivate_workshop_resources() 
         assert persisted_box.is_active is False
         assert persisted_employee is not None
         assert persisted_employee.is_active is False
+
+        reactivated_box_response = client.patch(
+            "/api/v1/admin/boxes/1",
+            headers=headers,
+            json={"is_active": True},
+        )
+        reactivated_employee_response = client.patch(
+            "/api/v1/admin/employees/1",
+            headers=headers,
+            json={"is_active": True},
+        )
+
+        assert reactivated_box_response.status_code == 200
+        assert reactivated_box_response.json() == {
+            "id": 1,
+            "label": "Box de diagnósticos",
+            "is_active": True,
+        }
+        assert reactivated_employee_response.status_code == 200
+        assert reactivated_employee_response.json() == {
+            "id": 1,
+            "name": "Ana Ribeiro",
+            "is_active": True,
+        }
     finally:
         app.dependency_overrides.clear()

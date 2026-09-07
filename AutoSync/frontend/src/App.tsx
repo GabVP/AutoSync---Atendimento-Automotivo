@@ -348,7 +348,10 @@ function AdministratorServices({ accessToken, onLogout }: AdministratorServicesP
   const [feedback, setFeedback] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [serviceBeingDeactivated, setServiceBeingDeactivated] = useState<number | null>(null);
+  const [serviceBeingUpdated, setServiceBeingUpdated] = useState<{
+    id: number;
+    isActive: boolean;
+  } | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -464,10 +467,13 @@ function AdministratorServices({ accessToken, onLogout }: AdministratorServicesP
     }
   }
 
-  async function deactivateService(service: AdministratorService) {
+  async function updateServiceActivity(service: AdministratorService, isActive: boolean) {
+    const action = isActive
+      ? { infinitive: "reativar", pastParticiple: "reativado" }
+      : { infinitive: "desativar", pastParticiple: "desativado" };
     setError(null);
     setFeedback(null);
-    setServiceBeingDeactivated(service.id);
+    setServiceBeingUpdated({ id: service.id, isActive });
 
     try {
       const response = await fetch(`${apiBaseUrl}/admin/services/${service.id}`, {
@@ -476,32 +482,32 @@ function AdministratorServices({ accessToken, onLogout }: AdministratorServicesP
           Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ is_active: false }),
+        body: JSON.stringify({ is_active: isActive }),
       });
       if (response.status === 401) {
         onLogout();
         return;
       }
       if (!response.ok) {
-        throw new Error("Não foi possível desativar o serviço.");
+        throw new Error(`Não foi possível ${action.infinitive} o serviço.`);
       }
 
       const updatedService = (await response.json()) as AdministratorService;
       setServices((currentServices) => currentServices.map((currentService) => (
         currentService.id === updatedService.id ? updatedService : currentService
       )));
-      setFeedback(`Serviço ${updatedService.title} desativado.`);
+      setFeedback(`Serviço ${updatedService.title} ${action.pastParticiple}.`);
       if (editingService?.id === updatedService.id) {
         resetForm();
       }
-    } catch (deactivationError) {
+    } catch (activityUpdateError) {
       setError(
-        deactivationError instanceof Error
-          ? deactivationError.message
-          : "Não foi possível desativar o serviço.",
+        activityUpdateError instanceof Error
+          ? activityUpdateError.message
+          : `Não foi possível ${action.infinitive} o serviço.`,
       );
     } finally {
-      setServiceBeingDeactivated(null);
+      setServiceBeingUpdated(null);
     }
   }
 
@@ -510,7 +516,7 @@ function AdministratorServices({ accessToken, onLogout }: AdministratorServicesP
       <div className="admin-services__heading">
         <p className="eyebrow">CATÁLOGO DE ATENDIMENTO</p>
         <h2 id="admin-services-title">Gerenciar serviços</h2>
-        <p>Cadastre, atualize ou desative serviços. Os inativos permanecem no histórico e deixam de aparecer para o cliente.</p>
+        <p>Cadastre, atualize, desative ou reative serviços. Os inativos permanecem no histórico e deixam de aparecer para o cliente.</p>
       </div>
 
       <div className="admin-services__content">
@@ -576,7 +582,7 @@ function AdministratorServices({ accessToken, onLogout }: AdministratorServicesP
                         <button
                           aria-label={`Editar serviço ${service.title}`}
                           className="admin-action admin-action--edit"
-                          disabled={isSaving || serviceBeingDeactivated === service.id}
+                          disabled={isSaving || serviceBeingUpdated?.id === service.id}
                           onClick={() => editService(service)}
                           type="button"
                         >
@@ -586,13 +592,27 @@ function AdministratorServices({ accessToken, onLogout }: AdministratorServicesP
                           <button
                             aria-label={`Desativar serviço ${service.title}`}
                             className="admin-action admin-action--deactivate"
-                            disabled={isSaving || serviceBeingDeactivated === service.id}
-                            onClick={() => void deactivateService(service)}
+                            disabled={isSaving || serviceBeingUpdated?.id === service.id}
+                            onClick={() => void updateServiceActivity(service, false)}
                             type="button"
                           >
-                            {serviceBeingDeactivated === service.id ? "Desativando…" : "Desativar"}
+                            {serviceBeingUpdated?.id === service.id && !serviceBeingUpdated.isActive
+                              ? "Desativando…"
+                              : "Desativar"}
                           </button>
-                        ) : null}
+                        ) : (
+                          <button
+                            aria-label={`Reativar serviço ${service.title}`}
+                            className="admin-action"
+                            disabled={isSaving || serviceBeingUpdated?.id === service.id}
+                            onClick={() => void updateServiceActivity(service, true)}
+                            type="button"
+                          >
+                            {serviceBeingUpdated?.id === service.id && serviceBeingUpdated.isActive
+                              ? "Reativando…"
+                              : "Reativar"}
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -632,7 +652,10 @@ function AdministratorWorkshopResourceManager({
   const [feedback, setFeedback] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [resourceBeingDeactivated, setResourceBeingDeactivated] = useState<number | null>(null);
+  const [resourceBeingUpdated, setResourceBeingUpdated] = useState<{
+    id: number;
+    isActive: boolean;
+  } | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -751,10 +774,13 @@ function AdministratorWorkshopResourceManager({
     }
   }
 
-  async function deactivateResource(resource: AdministratorWorkshopResource) {
+  async function updateResourceActivity(resource: AdministratorWorkshopResource, isActive: boolean) {
+    const action = isActive
+      ? { infinitive: "reativar", pastParticiple: "reativado" }
+      : { infinitive: "desativar", pastParticiple: "desativado" };
     setError(null);
     setFeedback(null);
-    setResourceBeingDeactivated(resource.id);
+    setResourceBeingUpdated({ id: resource.id, isActive });
 
     try {
       const response = await fetch(`${apiBaseUrl}/admin/${configuration.endpoint}/${resource.id}`, {
@@ -763,14 +789,14 @@ function AdministratorWorkshopResourceManager({
           Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ is_active: false }),
+        body: JSON.stringify({ is_active: isActive }),
       });
       if (response.status === 401) {
         onLogout();
         return;
       }
       if (!response.ok) {
-        throw new Error(`Não foi possível desativar o ${configuration.singularLabel}.`);
+        throw new Error(`Não foi possível ${action.infinitive} o ${configuration.singularLabel}.`);
       }
 
       const updatedResource = (await response.json()) as AdministratorWorkshopResource;
@@ -781,18 +807,18 @@ function AdministratorWorkshopResourceManager({
         configuration,
         workshopResourceValue(updatedResource, configuration),
       );
-      setFeedback(`${updatedDescription} desativado.`);
+      setFeedback(`${updatedDescription} ${action.pastParticiple}.`);
       if (editingResource?.id === updatedResource.id) {
         resetForm();
       }
-    } catch (deactivationError) {
+    } catch (activityUpdateError) {
       setError(
-        deactivationError instanceof Error
-          ? deactivationError.message
-          : `Não foi possível desativar o ${configuration.singularLabel}.`,
+        activityUpdateError instanceof Error
+          ? activityUpdateError.message
+          : `Não foi possível ${action.infinitive} o ${configuration.singularLabel}.`,
       );
     } finally {
-      setResourceBeingDeactivated(null);
+      setResourceBeingUpdated(null);
     }
   }
 
@@ -856,7 +882,7 @@ function AdministratorWorkshopResourceManager({
                         <button
                           aria-label={`Editar ${configuration.singularLabel} ${resourceValue}`}
                           className="admin-action admin-action--edit"
-                          disabled={isSaving || resourceBeingDeactivated === resource.id}
+                          disabled={isSaving || resourceBeingUpdated?.id === resource.id}
                           onClick={() => editResource(resource)}
                           type="button"
                         >
@@ -866,13 +892,27 @@ function AdministratorWorkshopResourceManager({
                           <button
                             aria-label={`Desativar ${configuration.singularLabel} ${resourceValue}`}
                             className="admin-action admin-action--deactivate"
-                            disabled={isSaving || resourceBeingDeactivated === resource.id}
-                            onClick={() => void deactivateResource(resource)}
+                            disabled={isSaving || resourceBeingUpdated?.id === resource.id}
+                            onClick={() => void updateResourceActivity(resource, false)}
                             type="button"
                           >
-                            {resourceBeingDeactivated === resource.id ? "Desativando…" : "Desativar"}
+                            {resourceBeingUpdated?.id === resource.id && !resourceBeingUpdated.isActive
+                              ? "Desativando…"
+                              : "Desativar"}
                           </button>
-                        ) : null}
+                        ) : (
+                          <button
+                            aria-label={`Reativar ${configuration.singularLabel} ${resourceValue}`}
+                            className="admin-action"
+                            disabled={isSaving || resourceBeingUpdated?.id === resource.id}
+                            onClick={() => void updateResourceActivity(resource, true)}
+                            type="button"
+                          >
+                            {resourceBeingUpdated?.id === resource.id && resourceBeingUpdated.isActive
+                              ? "Reativando…"
+                              : "Reativar"}
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -892,7 +932,7 @@ function AdministratorWorkshopResources({ accessToken, onLogout }: Administrator
       <div className="admin-workshop-resources__heading">
         <p className="eyebrow">CAPACIDADE DA OFICINA</p>
         <h2 id="admin-workshop-resources-title">Gerenciar recursos da oficina</h2>
-        <p>Cadastre, atualize ou desative os boxes e funcionários usados nos atendimentos.</p>
+        <p>Cadastre, atualize, desative ou reative os boxes e funcionários usados nos atendimentos.</p>
       </div>
       <div className="admin-workshop-resources__grid">
         <AdministratorWorkshopResourceManager
