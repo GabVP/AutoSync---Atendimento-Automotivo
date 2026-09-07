@@ -16,6 +16,8 @@ type RequestConfirmation = {
 
 type RequestStatus = "PENDENTE" | "CONFIRMADO" | "CANCELADO";
 
+type OperationalStatus = "AGENDADO" | "EM_ANDAMENTO" | "ATRASADO" | "CONCLUÍDO";
+
 type TrackingResult = {
   tracking_code: string;
   status: RequestStatus;
@@ -35,6 +37,11 @@ type AdministratorRequestSummary = {
   status: RequestStatus;
   tracking_code: string;
   created_at: string;
+  operational_status: OperationalStatus | null;
+  scheduled_start_at: string | null;
+  scheduled_end_at: string | null;
+  workshop_box_label: string | null;
+  employee_name: string | null;
 };
 
 type AdministratorRequestPage = {
@@ -50,7 +57,37 @@ type AdministratorRequestStatusResponse = {
   status: RequestStatus;
 };
 
-type AdministratorRequestActionStatus = "CONFIRMADO" | "CANCELADO";
+type AdministratorRequestActionStatus = "CANCELADO";
+
+type AdministratorOperationalActionStatus = "EM_ANDAMENTO" | "CONCLUÍDO";
+
+type AdministratorOperationalStatusResponse = {
+  id: number;
+  status: "CONFIRMADO";
+  operational_status: Exclude<OperationalStatus, "AGENDADO">;
+};
+
+type AdministratorSchedulingSuggestion = {
+  request_id: number;
+  workshop_box_id: number;
+  workshop_box_label: string;
+  employee_id: number;
+  employee_name: string;
+  scheduled_start_at: string;
+  scheduled_end_at: string;
+};
+
+type AdministratorSchedulingConfirmation = {
+  id: number;
+  status: "CONFIRMADO";
+  operational_status: "AGENDADO";
+  workshop_box_id: number;
+  workshop_box_label: string;
+  employee_id: number;
+  employee_name: string;
+  scheduled_start_at: string;
+  scheduled_end_at: string;
+};
 
 type AdministratorService = Service & {
   is_active: boolean;
@@ -155,6 +192,19 @@ function displayStatus(status: RequestStatus): string {
     CONFIRMADO: "Atendimento confirmado",
     CANCELADO: "Solicitação cancelada",
   }[status];
+}
+
+function displayOperationalStatus(status: OperationalStatus): string {
+  return {
+    AGENDADO: "Agendado",
+    EM_ANDAMENTO: "Em andamento",
+    ATRASADO: "Atrasado",
+    CONCLUÍDO: "Concluído",
+  }[status];
+}
+
+function toDatetimeLocalValue(date: string): string {
+  return date.slice(0, 16);
 }
 
 function currentApplicationPath(): ApplicationPath {
@@ -854,6 +904,201 @@ function AdministratorWorkshopResources({ accessToken, onLogout }: Administrator
   );
 }
 
+type AdministratorSchedulingProps = AdministratorPanelProps & {
+  request: AdministratorRequestSummary;
+  onCancel: () => void;
+  onScheduled: (confirmation: AdministratorSchedulingConfirmation) => void;
+};
+
+function AdministratorScheduling({
+  accessToken,
+  onCancel,
+  onLogout,
+  onScheduled,
+  request,
+}: AdministratorSchedulingProps) {
+  const [suggestion, setSuggestion] = useState<AdministratorSchedulingSuggestion | null>(null);
+  const [boxes, setBoxes] = useState<AdministratorWorkshopResource[]>([]);
+  const [employees, setEmployees] = useState<AdministratorWorkshopResource[]>([]);
+  const [workshopBoxId, setWorkshopBoxId] = useState("");
+  const [employeeId, setEmployeeId] = useState("");
+  const [scheduledStartAt, setScheduledStartAt] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadSchedulingData() {
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const [suggestionResponse, boxesResponse, employeesResponse] = await Promise.all([
+          fetch(`${apiBaseUrl}/admin/requests/${request.id}/scheduling-suggestion`, {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          }),
+          fetch(`${apiBaseUrl}/admin/boxes`, {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          }),
+          fetch(`${apiBaseUrl}/admin/employees`, {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          }),
+        ]);
+        if ([suggestionResponse, boxesResponse, employeesResponse].some((response) => response.status === 401)) {
+          if (isMounted) {
+            onLogout();
+          }
+          return;
+        }
+        if (!suggestionResponse.ok) {
+          throw new Error("Não foi possível encontrar uma sugestão de horário para esta solicitação.");
+        }
+        if (!boxesResponse.ok || !employeesResponse.ok) {
+          throw new Error("Não foi possível carregar os recursos ativos da oficina.");
+        }
+
+        const [loadedSuggestion, loadedBoxes, loadedEmployees] = await Promise.all([
+          suggestionResponse.json() as Promise<AdministratorSchedulingSuggestion>,
+          boxesResponse.json() as Promise<AdministratorWorkshopResource[]>,
+          employeesResponse.json() as Promise<AdministratorWorkshopResource[]>,
+        ]);
+        if (isMounted) {
+          setSuggestion(loadedSuggestion);
+          setBoxes(loadedBoxes.filter((box) => box.is_active));
+          setEmployees(loadedEmployees.filter((employee) => employee.is_active));
+          setWorkshopBoxId(String(loadedSuggestion.workshop_box_id));
+          setEmployeeId(String(loadedSuggestion.employee_id));
+          setScheduledStartAt(toDatetimeLocalValue(loadedSuggestion.scheduled_start_at));
+        }
+      } catch (loadError) {
+        if (isMounted) {
+          setError(
+            loadError instanceof Error
+              ? loadError.message
+              : "Não foi possível preparar o agendamento.",
+          );
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    void loadSchedulingData();
+    return () => {
+      isMounted = false;
+    };
+  }, [accessToken, onLogout, request.id]);
+
+  async function submitScheduling(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!workshopBoxId || !employeeId || !scheduledStartAt) {
+      setError("Escolha um box, um funcionário e o horário de início.");
+      return;
+    }
+
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      const response = await fetch(`${apiBaseUrl}/admin/requests/${request.id}/schedule`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          workshop_box_id: Number(workshopBoxId),
+          employee_id: Number(employeeId),
+          scheduled_start_at: scheduledStartAt,
+        }),
+      });
+      if (response.status === 401) {
+        onLogout();
+        return;
+      }
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null) as { detail?: string } | null;
+        throw new Error(payload?.detail ?? "Não foi possível agendar a solicitação. Revise a disponibilidade e tente novamente.");
+      }
+
+      onScheduled((await response.json()) as AdministratorSchedulingConfirmation);
+    } catch (submissionError) {
+      setError(
+        submissionError instanceof Error
+          ? submissionError.message
+          : "Não foi possível agendar a solicitação. Revise a disponibilidade e tente novamente.",
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <section className="admin-scheduling" aria-labelledby="admin-scheduling-title">
+      <div className="admin-scheduling__heading">
+        <p className="eyebrow">CONFIRMAÇÃO COM CAPACIDADE</p>
+        <h2 id="admin-scheduling-title">Agendar {request.name}</h2>
+        <p>Use a sugestão ou ajuste os recursos e o horário antes de confirmar o atendimento.</p>
+      </div>
+
+      {isLoading ? <p className="notice">Buscando o melhor horário disponível…</p> : null}
+      {error ? <p className="notice notice--error" role="alert">{error}</p> : null}
+      {!isLoading && !error ? (
+        <form className="admin-scheduling__form" onSubmit={submitScheduling}>
+          {suggestion ? (
+            <p className="admin-scheduling__suggestion">
+              Sugestão: {suggestion.workshop_box_label} com {suggestion.employee_name} em {formatRequestDate(suggestion.scheduled_start_at)}.
+            </p>
+          ) : null}
+          <label>
+            Box do atendimento
+            <select
+              onChange={(event) => setWorkshopBoxId(event.target.value)}
+              required
+              value={workshopBoxId}
+            >
+              <option value="">Selecione um box</option>
+              {boxes.map((box) => <option key={box.id} value={box.id}>{box.label}</option>)}
+            </select>
+          </label>
+          <label>
+            Funcionário responsável
+            <select
+              onChange={(event) => setEmployeeId(event.target.value)}
+              required
+              value={employeeId}
+            >
+              <option value="">Selecione um funcionário</option>
+              {employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}
+            </select>
+          </label>
+          <label>
+            Início do atendimento
+            <input
+              onChange={(event) => setScheduledStartAt(event.target.value)}
+              required
+              step="60"
+              type="datetime-local"
+              value={scheduledStartAt}
+            />
+          </label>
+          <div className="admin-scheduling__actions">
+            <button className="button" disabled={isSubmitting} type="submit">
+              {isSubmitting ? "Agendando…" : "Confirmar agendamento"}
+            </button>
+            <button className="admin-service-form__cancel" disabled={isSubmitting} onClick={onCancel} type="button">
+              Fechar
+            </button>
+          </div>
+        </form>
+      ) : null}
+    </section>
+  );
+}
+
 function AdministratorPanel({ accessToken, onLogout }: AdministratorPanelProps) {
   const [requestPage, setRequestPage] = useState<AdministratorRequestPage | null>(null);
   const [statusFilter, setStatusFilter] = useState<RequestStatus | "">("");
@@ -868,6 +1113,11 @@ function AdministratorPanel({ accessToken, onLogout }: AdministratorPanelProps) 
     status: AdministratorRequestActionStatus;
   } | null>(null);
   const [statusFeedback, setStatusFeedback] = useState<string | null>(null);
+  const [requestBeingScheduled, setRequestBeingScheduled] = useState<AdministratorRequestSummary | null>(null);
+  const [operationalStatusBeingUpdated, setOperationalStatusBeingUpdated] = useState<{
+    requestId: number;
+    status: AdministratorOperationalActionStatus;
+  } | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -937,9 +1187,7 @@ function AdministratorPanel({ accessToken, onLogout }: AdministratorPanelProps) 
     request: AdministratorRequestSummary,
     nextStatus: AdministratorRequestActionStatus,
   ) {
-    const action = nextStatus === "CONFIRMADO"
-      ? { infinitive: "confirmar", pastParticiple: "confirmada" }
-      : { infinitive: "cancelar", pastParticiple: "cancelada" };
+    const action = { infinitive: "cancelar", pastParticiple: "cancelada" };
     setQueueError(null);
     setStatusFeedback(null);
     setRequestStatusBeingUpdated({ requestId: request.id, status: nextStatus });
@@ -975,6 +1223,9 @@ function AdministratorPanel({ accessToken, onLogout }: AdministratorPanelProps) 
         )),
       } : currentPage);
       setStatusFeedback(`Solicitação de ${request.name} ${action.pastParticiple}.`);
+      if (requestBeingScheduled?.id === request.id) {
+        setRequestBeingScheduled(null);
+      }
       setQueueRefresh((currentRefresh) => currentRefresh + 1);
     } catch (error) {
       setQueueError(
@@ -982,6 +1233,82 @@ function AdministratorPanel({ accessToken, onLogout }: AdministratorPanelProps) 
       );
     } finally {
       setRequestStatusBeingUpdated(null);
+    }
+  }
+
+  function applySchedulingConfirmation(confirmation: AdministratorSchedulingConfirmation) {
+    const requestName = requestBeingScheduled?.name ?? "selecionada";
+    setRequestPage((currentPage) => currentPage ? {
+      ...currentPage,
+      items: currentPage.items.map((currentRequest) => (
+        currentRequest.id === confirmation.id
+          ? {
+            ...currentRequest,
+            status: confirmation.status,
+            operational_status: confirmation.operational_status,
+            scheduled_start_at: confirmation.scheduled_start_at,
+            scheduled_end_at: confirmation.scheduled_end_at,
+            workshop_box_label: confirmation.workshop_box_label,
+            employee_name: confirmation.employee_name,
+          }
+          : currentRequest
+      )),
+    } : currentPage);
+    setRequestBeingScheduled(null);
+    setStatusFeedback(`Solicitação de ${requestName} agendada.`);
+    setQueueRefresh((currentRefresh) => currentRefresh + 1);
+  }
+
+  async function updateOperationalStatus(
+    request: AdministratorRequestSummary,
+    nextStatus: AdministratorOperationalActionStatus,
+  ) {
+    const action = nextStatus === "EM_ANDAMENTO"
+      ? { infinitive: "iniciar", pastParticiple: "iniciado" }
+      : { infinitive: "concluir", pastParticiple: "concluído" };
+    setQueueError(null);
+    setStatusFeedback(null);
+    setOperationalStatusBeingUpdated({ requestId: request.id, status: nextStatus });
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/admin/requests/${request.id}/operational-status`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ operational_status: nextStatus }),
+      });
+      if (response.status === 401) {
+        onLogout();
+        return;
+      }
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null) as { detail?: string } | null;
+        throw new Error(payload?.detail ?? `Não foi possível ${action.infinitive} o atendimento.`);
+      }
+
+      const updatedRequest = (await response.json()) as AdministratorOperationalStatusResponse;
+      if (updatedRequest.status !== "CONFIRMADO" || updatedRequest.operational_status !== nextStatus) {
+        throw new Error(`Não foi possível ${action.infinitive} o atendimento.`);
+      }
+
+      setRequestPage((currentPage) => currentPage ? {
+        ...currentPage,
+        items: currentPage.items.map((currentRequest) => (
+          currentRequest.id === updatedRequest.id
+            ? { ...currentRequest, operational_status: updatedRequest.operational_status }
+            : currentRequest
+        )),
+      } : currentPage);
+      setStatusFeedback(`Atendimento de ${request.name} ${action.pastParticiple}.`);
+      setQueueRefresh((currentRefresh) => currentRefresh + 1);
+    } catch (error) {
+      setQueueError(
+        error instanceof Error ? error.message : `Não foi possível ${action.infinitive} o atendimento.`,
+      );
+    } finally {
+      setOperationalStatusBeingUpdated(null);
     }
   }
 
@@ -1044,6 +1371,7 @@ function AdministratorPanel({ accessToken, onLogout }: AdministratorPanelProps) 
                   <th scope="col">Cliente</th>
                   <th scope="col">Serviço</th>
                   <th scope="col">Status</th>
+                  <th scope="col">Agendamento</th>
                   <th scope="col">Recebido</th>
                   <th scope="col">Ações</th>
                 </tr>
@@ -1060,24 +1388,63 @@ function AdministratorPanel({ accessToken, onLogout }: AdministratorPanelProps) 
                       <strong className={`tracking-status tracking-status--${request.status.toLowerCase()}`}>
                         {displayStatus(request.status)}
                       </strong>
+                      {request.operational_status ? (
+                        <strong className={`admin-operational-status admin-operational-status--${request.operational_status.toLowerCase()}`}>
+                          {displayOperationalStatus(request.operational_status)}
+                        </strong>
+                      ) : null}
+                    </td>
+                    <td>
+                      {request.scheduled_start_at ? (
+                        <span className="admin-schedule-summary">
+                          {formatRequestDate(request.scheduled_start_at)}<br />
+                          {request.workshop_box_label} · {request.employee_name}
+                        </span>
+                      ) : "A definir"}
                     </td>
                     <td>{formatRequestDate(request.created_at)}</td>
                     <td>
                       <div className="admin-actions">
                         {request.status === "PENDENTE" ? (
                           <button
-                            aria-label={`Confirmar solicitação de ${request.name}`}
+                            aria-label={`Agendar solicitação de ${request.name}`}
                             className="admin-action admin-action--confirm"
                             disabled={requestStatusBeingUpdated?.requestId === request.id}
-                            onClick={() => void updateRequestStatus(request, "CONFIRMADO")}
+                            onClick={() => setRequestBeingScheduled(request)}
                             type="button"
                           >
-                            {requestStatusBeingUpdated?.requestId === request.id
-                              && requestStatusBeingUpdated.status === "CONFIRMADO"
-                              ? "Confirmando…"
-                              : "Confirmar"}
+                            Agendar
                           </button>
                         ) : null}
+                        {request.status === "CONFIRMADO" && request.operational_status === "AGENDADO" ? (
+                          <button
+                            aria-label={`Iniciar atendimento de ${request.name}`}
+                            className="admin-action admin-action--start"
+                            disabled={operationalStatusBeingUpdated?.requestId === request.id}
+                            onClick={() => void updateOperationalStatus(request, "EM_ANDAMENTO")}
+                            type="button"
+                          >
+                            {operationalStatusBeingUpdated?.requestId === request.id
+                              && operationalStatusBeingUpdated.status === "EM_ANDAMENTO"
+                              ? "Iniciando…"
+                              : "Iniciar"}
+                          </button>
+                        ) : null}
+                        {request.status === "CONFIRMADO"
+                          && (request.operational_status === "EM_ANDAMENTO" || request.operational_status === "ATRASADO") ? (
+                            <button
+                              aria-label={`Concluir atendimento de ${request.name}`}
+                              className="admin-action admin-action--complete"
+                              disabled={operationalStatusBeingUpdated?.requestId === request.id}
+                              onClick={() => void updateOperationalStatus(request, "CONCLUÍDO")}
+                              type="button"
+                            >
+                              {operationalStatusBeingUpdated?.requestId === request.id
+                                && operationalStatusBeingUpdated.status === "CONCLUÍDO"
+                                ? "Concluindo…"
+                                : "Concluir"}
+                            </button>
+                          ) : null}
                         {request.status !== "CANCELADO" ? (
                           <button
                             aria-label={`Cancelar solicitação de ${request.name}`}
@@ -1099,6 +1466,16 @@ function AdministratorPanel({ accessToken, onLogout }: AdministratorPanelProps) 
               </tbody>
             </table>
           </div>
+        ) : null}
+
+        {requestBeingScheduled ? (
+          <AdministratorScheduling
+            accessToken={accessToken}
+            onCancel={() => setRequestBeingScheduled(null)}
+            onLogout={onLogout}
+            onScheduled={applySchedulingConfirmation}
+            request={requestBeingScheduled}
+          />
         ) : null}
 
         {!isLoadingQueue && !queueError && requestPage?.total ? (
