@@ -170,12 +170,18 @@ const employeeConfiguration: WorkshopResourceConfiguration = {
   valueField: "name",
 };
 
-const serviceIcons: Record<string, string> = {
-  "Troca de óleo": "◒",
-  "Revisão preventiva": "◎",
-  "Alinhamento e balanceamento": "◌",
-  "Diagnóstico eletrônico": "⌘",
+const serviceImages: Record<string, string> = {
+  "Troca de óleo": "/assets/images/services/oil-change.webp",
+  "Revisão preventiva": "/assets/images/services/preventive-maintenance.webp",
+  "Alinhamento e balanceamento": "/assets/images/services/alignment-balance.webp",
+  "Diagnóstico eletrônico": "/assets/images/services/electronic-diagnostics.webp",
 };
+
+const benefitItems = [
+  { icon: "/assets/icons/benefits/specialist.png", label: "Atendimento especializado" },
+  { icon: "/assets/icons/benefits/quick-response.png", label: "Resposta rápida" },
+  { icon: "/assets/icons/benefits/vehicle-care.png", label: "Seu carro em boas mãos" },
+];
 
 function displayDuration(durationMinutes: number): string {
   if (durationMinutes < 60) {
@@ -276,7 +282,7 @@ function LoginPage({ onAuthenticated, onNavigateHome }: LoginPageProps) {
   return (
     <main className="auth-shell">
       <section className="auth-card" aria-labelledby="login-title">
-        <button className="auth-card__brand" onClick={onNavigateHome} type="button">
+        <button className="brand auth-card__brand" onClick={onNavigateHome} type="button">
           <span className="brand-mark" aria-hidden="true"><i /><i /></span>
           <span><strong>AutoSync</strong><small>ÁREA ADMINISTRATIVA</small></span>
         </button>
@@ -1716,24 +1722,14 @@ function App() {
     <div className="site-shell">
       <header className="topbar">
         <a className="brand" href="#top" aria-label="AutoSync - início">
-          <span className="brand-mark" aria-hidden="true"><i /><i /></span>
-          <span><strong>AutoSync</strong><small>SEU CARRO SEMPRE EM MOVIMENTO</small></span>
+          <img className="brand-logo" src="/assets/brand/autosync-logo.png" alt="" />
         </a>
         <nav aria-label="Navegação principal">
           <a href="#services">Serviços</a>
           <a href="#how-it-works">Como funciona</a>
           <a href="#tracking">Acompanhar pedido</a>
-          <a
-            href={administratorSession ? "/admin" : "/login"}
-            onClick={(event) => {
-              event.preventDefault();
-              navigate(administratorSession ? "/admin" : "/login");
-            }}
-          >
-            Área do gestor
-          </a>
         </nav>
-        <a className="button button--small" href="#request">▣&nbsp; Solicitar atendimento</a>
+        <a className="button button--small" href="#request">Solicitar atendimento</a>
       </header>
 
       <main id="top">
@@ -1746,15 +1742,16 @@ function App() {
               seu atendimento o mais breve possível.
             </p>
             <ul className="hero__benefits" aria-label="Benefícios do atendimento">
-              <li>◉ Atendimento especializado</li>
-              <li>◷ Resposta rápida</li>
-              <li>▱ Seu carro em boas mãos</li>
+              {benefitItems.map((benefit) => (
+                <li key={benefit.label}>
+                  <img className="benefit-icon" src={benefit.icon} alt="" />
+                  {benefit.label}
+                </li>
+              ))}
             </ul>
           </div>
-          <div className="hero__mechanic" aria-hidden="true">
-            <span className="hero__mechanic-glow" />
-            <span className="hero__mechanic-wheel" />
-            <span className="hero__mechanic-line" />
+          <div className="hero__mechanic">
+            <img className="hero__image" src="/assets/images/hero/workshop-hero.webp" alt="Mecânicos trabalhando na oficina AutoSync" />
           </div>
         </section>
 
@@ -1771,12 +1768,14 @@ function App() {
             <div className="service-grid">
               {services.map((service) => (
                 <button
-                  className={`service-card ${String(service.id) === form.service_id ? "service-card--selected" : ""}`}
+                  className={`service-card service-card--media-first ${String(service.id) === form.service_id ? "service-card--selected" : ""}`}
                   key={service.id}
                   onClick={() => updateField("service_id", String(service.id))}
                   type="button"
                 >
-                  <span className="service-card__art" aria-hidden="true">{serviceIcons[service.title] ?? "✦"}</span>
+                  <span className="service-card__art" aria-hidden="true">
+                    {serviceImages[service.title] ? <img className="service-card__image" src={serviceImages[service.title]} alt="" /> : "✦"}
+                  </span>
                   <span className="service-card__body">
                     <strong>{service.title}</strong>
                     <small>{displayDuration(service.duration_minutes)}</small>
@@ -1806,38 +1805,38 @@ function App() {
             <form noValidate onSubmit={submitRequest}>
               <div className="form-grid">
                 <label>
-                  Nome <em aria-hidden="true">*</em>
+                  <span className="field-label">Nome <em aria-hidden="true">*</em></span>
                   <input aria-invalid={Boolean(fieldErrors.name)} aria-describedby={fieldErrors.name ? "name-error" : undefined} onChange={(event) => updateField("name", event.target.value)} placeholder="Ex.: João Silva" value={form.name} />
                   {fieldErrors.name ? <small className="field-error" id="name-error">{fieldErrors.name}</small> : null}
                 </label>
                 <label>
-                  Telefone <em aria-hidden="true">*</em>
+                  <span className="field-label">Telefone <em aria-hidden="true">*</em></span>
                   <input aria-invalid={Boolean(fieldErrors.phone)} inputMode="tel" onChange={(event) => updateField("phone", event.target.value)} placeholder="(11) 91234-5678" value={form.phone} />
                   {fieldErrors.phone ? <small className="field-error">{fieldErrors.phone}</small> : null}
                 </label>
                 <label>
-                  E-mail <span>(opcional)</span>
+                  <span className="field-label">E-mail <span>(opcional)</span></span>
                   <input aria-invalid={Boolean(fieldErrors.email)} onChange={(event) => updateField("email", event.target.value)} placeholder="exemplo@seuemail.com" type="email" value={form.email} />
                   {fieldErrors.email ? <small className="field-error">{fieldErrors.email}</small> : null}
                 </label>
                 <div className="vehicle-fields">
                   <label>
-                    Marca <em aria-hidden="true">*</em>
+                    <span className="field-label">Marca <em aria-hidden="true">*</em></span>
                     <input aria-invalid={Boolean(fieldErrors.vehicle_make)} onChange={(event) => updateField("vehicle_make", event.target.value)} placeholder="Ex.: Toyota" value={form.vehicle_make} />
                   </label>
                   <label>
-                    Modelo <em aria-hidden="true">*</em>
+                    <span className="field-label">Modelo <em aria-hidden="true">*</em></span>
                     <input aria-invalid={Boolean(fieldErrors.vehicle_model)} onChange={(event) => updateField("vehicle_model", event.target.value)} placeholder="Ex.: Corolla" value={form.vehicle_model} />
                   </label>
                   {fieldErrors.vehicle_make || fieldErrors.vehicle_model ? <small className="field-error">Informe marca e modelo do veículo.</small> : null}
                 </div>
                 <label>
-                  Placa <em aria-hidden="true">*</em>
+                  <span className="field-label">Placa <em aria-hidden="true">*</em></span>
                   <input aria-invalid={Boolean(fieldErrors.vehicle_plate)} onChange={(event) => updateField("vehicle_plate", event.target.value)} placeholder="Ex.: ABC1D23" value={form.vehicle_plate} />
                   {fieldErrors.vehicle_plate ? <small className="field-error">{fieldErrors.vehicle_plate}</small> : null}
                 </label>
                 <label>
-                  Serviço <em aria-hidden="true">*</em>
+                  <span className="field-label">Serviço <em aria-hidden="true">*</em></span>
                   <select aria-invalid={Boolean(fieldErrors.service_id)} onChange={(event) => updateField("service_id", event.target.value)} value={form.service_id}>
                     <option value="">Selecione um serviço</option>
                     {services.map((service) => <option key={service.id} value={service.id}>{service.title}</option>)}
@@ -1845,13 +1844,13 @@ function App() {
                   {fieldErrors.service_id ? <small className="field-error">{fieldErrors.service_id}</small> : null}
                 </label>
                 <label className="form-grid__full">
-                  Descrição <em aria-hidden="true">*</em>
+                  <span className="field-label">Descrição <em aria-hidden="true">*</em></span>
                   <textarea aria-invalid={Boolean(fieldErrors.description)} maxLength={1000} onChange={(event) => updateField("description", event.target.value)} placeholder="Conte o que está acontecendo com seu carro…" rows={4} value={form.description} />
                   <small className="character-count">{form.description.length}/1000</small>
                   {fieldErrors.description ? <small className="field-error">{fieldErrors.description}</small> : null}
                 </label>
                 <label className="form-grid__full">
-                  Preferência de atendimento <span>(opcional)</span>
+                  <span className="field-label">Preferência de atendimento <span>(opcional)</span></span>
                   <input onChange={(event) => updateField("preference", event.target.value)} placeholder="Ex.: Período da manhã, dia específico, observações" value={form.preference} />
                 </label>
               </div>

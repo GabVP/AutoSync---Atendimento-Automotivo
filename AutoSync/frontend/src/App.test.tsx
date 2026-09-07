@@ -406,6 +406,41 @@ test("visitor can submit a valid request and see its tracking code", async () =>
   expect(screen.getByText("Pedido recebido como PENDENTE.")).toBeInTheDocument();
 });
 
+test("visitor interface keeps management access private and required markers with their labels", async () => {
+  render(<App />);
+
+  await screen.findByRole("option", { name: "Troca de óleo" });
+
+  expect(screen.queryByRole("link", { name: "Área do gestor" })).not.toBeInTheDocument();
+  const nameFieldLabel = screen.getByText(/^Nome/, { selector: ".field-label" });
+  expect(nameFieldLabel.querySelector("em")).toHaveTextContent("*");
+});
+
+test("visitor interface renders the supplied workshop visual assets", async () => {
+  render(<App />);
+
+  await screen.findByRole("option", { name: "Troca de óleo" });
+
+  const heroImage = screen.getByRole("img", { name: "Mecânicos trabalhando na oficina AutoSync" });
+  expect(heroImage)
+    .toHaveAttribute("src", "/assets/images/hero/workshop-hero.webp");
+  expect(heroImage).toHaveClass("hero__image");
+  expect(document.querySelector(".brand-logo"))
+    .toHaveAttribute("src", "/assets/brand/autosync-logo.png");
+  const serviceImage = document.querySelector(".service-card__art img");
+  expect(serviceImage)
+    .toHaveAttribute("src", "/assets/images/services/oil-change.webp");
+  expect(serviceImage).toHaveClass("service-card__image");
+  expect(serviceImage?.closest(".service-card")).toHaveClass("service-card--media-first");
+  const benefitIconSources = Array.from(document.querySelectorAll(".benefit-icon"))
+    .map((icon) => icon.getAttribute("src"));
+  expect(benefitIconSources).toEqual([
+    "/assets/icons/benefits/specialist.png",
+    "/assets/icons/benefits/quick-response.png",
+    "/assets/icons/benefits/vehicle-care.png",
+  ]);
+});
+
 test("visitor sees browser validation and no request is sent with missing fields", async () => {
   const user = userEvent.setup();
   render(<App />);
