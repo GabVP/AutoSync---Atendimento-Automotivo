@@ -25,6 +25,11 @@ class AdministratorRequestSummary(BaseModel):
     status: Literal["PENDENTE", "CONFIRMADO", "CANCELADO"]
     tracking_code: str
     created_at: datetime
+    operational_status: Literal["AGENDADO", "EM_ANDAMENTO", "ATRASADO", "CONCLUÍDO"] | None = None
+    scheduled_start_at: datetime | None = None
+    scheduled_end_at: datetime | None = None
+    workshop_box_label: str | None = None
+    employee_name: str | None = None
 
 
 class AdministratorRequestPage(BaseModel):
@@ -42,6 +47,53 @@ class AdministratorRequestStatusUpdate(BaseModel):
 class AdministratorRequestStatusResponse(BaseModel):
     id: int
     status: Literal["PENDENTE", "CONFIRMADO", "CANCELADO"]
+
+
+class AdministratorOperationalStatusUpdate(BaseModel):
+    operational_status: Literal["EM_ANDAMENTO", "CONCLUÍDO"]
+
+
+class AdministratorOperationalStatusResponse(BaseModel):
+    id: int
+    status: Literal["CONFIRMADO"]
+    operational_status: Literal["EM_ANDAMENTO", "ATRASADO", "CONCLUÍDO"]
+
+
+class AdministratorSchedulingSuggestionResponse(BaseModel):
+    request_id: int
+    workshop_box_id: int
+    workshop_box_label: str
+    employee_id: int
+    employee_name: str
+    scheduled_start_at: datetime
+    scheduled_end_at: datetime
+
+
+class AdministratorSchedulingConfirmationRequest(BaseModel):
+    workshop_box_id: int = Field(ge=1)
+    employee_id: int = Field(ge=1)
+    scheduled_start_at: datetime
+
+    @field_validator("scheduled_start_at")
+    @classmethod
+    def scheduled_start_must_use_local_minute_precision(cls, value: datetime) -> datetime:
+        if value.tzinfo is not None:
+            raise ValueError("Use a local date and time without a timezone offset.")
+        if value.second or value.microsecond:
+            raise ValueError("Scheduling must start at an exact minute.")
+        return value
+
+
+class AdministratorSchedulingConfirmationResponse(BaseModel):
+    id: int
+    status: Literal["CONFIRMADO"]
+    operational_status: Literal["AGENDADO"]
+    workshop_box_id: int
+    workshop_box_label: str
+    employee_id: int
+    employee_name: str
+    scheduled_start_at: datetime
+    scheduled_end_at: datetime
 
 
 class AdministratorServiceCreate(BaseModel):
