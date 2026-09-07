@@ -52,6 +52,10 @@ type AdministratorRequestStatusResponse = {
 
 type AdministratorRequestActionStatus = "CONFIRMADO" | "CANCELADO";
 
+type AdministratorService = Service & {
+  is_active: boolean;
+};
+
 type ApplicationPath = "/" | "/login" | "/admin";
 
 type AdministratorSession = {
@@ -86,6 +90,11 @@ const emptyForm: FormValues = {
   description: "",
   preference: "",
   accepts_terms: false,
+};
+
+const emptyAdministratorServiceForm = {
+  title: "",
+  durationMinutes: "",
 };
 
 const serviceIcons: Record<string, string> = {
@@ -225,11 +234,280 @@ type AdministratorPanelProps = {
   onLogout: () => void;
 };
 
+type AdministratorServicesProps = AdministratorPanelProps;
+
 function formatRequestDate(date: string): string {
   return new Intl.DateTimeFormat("pt-BR", {
     dateStyle: "short",
     timeStyle: "short",
   }).format(new Date(date));
+}
+
+function AdministratorServices({ accessToken, onLogout }: AdministratorServicesProps) {
+  const [services, setServices] = useState<AdministratorService[]>([]);
+  const [title, setTitle] = useState(emptyAdministratorServiceForm.title);
+  const [durationMinutes, setDurationMinutes] = useState(emptyAdministratorServiceForm.durationMinutes);
+  const [editingService, setEditingService] = useState<AdministratorService | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [serviceBeingDeactivated, setServiceBeingDeactivated] = useState<number | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadServices() {
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const response = await fetch(`${apiBaseUrl}/admin/services`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (response.status === 401) {
+          if (isMounted) {
+            onLogout();
+          }
+          return;
+        }
+        if (!response.ok) {
+          throw new Error("Não foi possível carregar os serviços.");
+        }
+
+        const loadedServices = (await response.json()) as AdministratorService[];
+        if (isMounted) {
+          setServices(loadedServices);
+        }
+      } catch (loadError) {
+        if (isMounted) {
+          setError(
+            loadError instanceof Error ? loadError.message : "Não foi possível carregar os serviços.",
+          );
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    void loadServices();
+    return () => {
+      isMounted = false;
+    };
+  }, [accessToken, onLogout]);
+
+  function resetForm() {
+    setTitle(emptyAdministratorServiceForm.title);
+    setDurationMinutes(emptyAdministratorServiceForm.durationMinutes);
+    setEditingService(null);
+  }
+
+  function editService(service: AdministratorService) {
+    setTitle(service.title);
+    setDurationMinutes(String(service.duration_minutes));
+    setEditingService(service);
+    setError(null);
+    setFeedback(null);
+  }
+
+  async function submitService(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const normalizedTitle = title.trim();
+    const normalizedDuration = Number(durationMinutes);
+    if (!normalizedTitle || !Number.isInteger(normalizedDuration) || normalizedDuration <= 0) {
+      setError("Informe um nome e uma duração válida em minutos.");
+      setFeedback(null);
+      return;
+    }
+
+    const isEditing = editingService !== null;
+    setError(null);
+    setFeedback(null);
+    setIsSaving(true);
+
+    try {
+      const response = await fetch(
+        isEditing
+          ? `${apiBaseUrl}/admin/services/${editingService.id}`
+          : `${apiBaseUrl}/admin/services`,
+        {
+          method: isEditing ? "PATCH" : "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ title: normalizedTitle, duration_minutes: normalizedDuration }),
+        },
+      );
+      if (response.status === 401) {
+        onLogout();
+        return;
+      }
+      if (!response.ok) {
+        throw new Error(`Não foi possível ${isEditing ? "atualizar" : "criar"} o serviço.`);
+      }
+
+      const savedService = (await response.json()) as AdministratorService;
+      setServices((currentServices) => (
+        isEditing
+          ? currentServices.map((service) => service.id === savedService.id ? savedService : service)
+          : [...currentServices, savedService]
+      ));
+      setFeedback(`Serviço ${savedService.title} ${isEditing ? "atualizado" : "criado"}.`);
+      resetForm();
+    } catch (saveError) {
+      setError(
+        saveError instanceof Error
+          ? saveError.message
+          : `Não foi possível ${isEditing ? "atualizar" : "criar"} o serviço.`,
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function deactivateService(service: AdministratorService) {
+    setError(null);
+    setFeedback(null);
+    setServiceBeingDeactivated(service.id);
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/admin/services/${service.id}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ is_active: false }),
+      });
+      if (response.status === 401) {
+        onLogout();
+        return;
+      }
+      if (!response.ok) {
+        throw new Error("Não foi possível desativar o serviço.");
+      }
+
+      const updatedService = (await response.json()) as AdministratorService;
+      setServices((currentServices) => currentServices.map((currentService) => (
+        currentService.id === updatedService.id ? updatedService : currentService
+      )));
+      setFeedback(`Serviço ${updatedService.title} desativado.`);
+      if (editingService?.id === updatedService.id) {
+        resetForm();
+      }
+    } catch (deactivationError) {
+      setError(
+        deactivationError instanceof Error
+          ? deactivationError.message
+          : "Não foi possível desativar o serviço.",
+      );
+    } finally {
+      setServiceBeingDeactivated(null);
+    }
+  }
+
+  return (
+    <section className="admin-services" aria-labelledby="admin-services-title">
+      <div className="admin-services__heading">
+        <p className="eyebrow">CATÁLOGO DE ATENDIMENTO</p>
+        <h2 id="admin-services-title">Gerenciar serviços</h2>
+        <p>Cadastre, atualize ou desative serviços. Os inativos permanecem no histórico e deixam de aparecer para o cliente.</p>
+      </div>
+
+      <div className="admin-services__content">
+        <form className="admin-service-form" onSubmit={submitService}>
+          <h3>{editingService ? "Editar serviço" : "Novo serviço"}</h3>
+          <label>
+            Nome do serviço
+            <input
+              onChange={(event) => setTitle(event.target.value)}
+              required
+              value={title}
+            />
+          </label>
+          <label>
+            Duração estimada (minutos)
+            <input
+              min="1"
+              onChange={(event) => setDurationMinutes(event.target.value)}
+              required
+              step="1"
+              type="number"
+              value={durationMinutes}
+            />
+          </label>
+          {error ? <p className="notice notice--error" role="alert">{error}</p> : null}
+          {feedback ? <p className="notice notice--success" role="status">{feedback}</p> : null}
+          <div className="admin-service-form__actions">
+            <button className="button" disabled={isSaving} type="submit">
+              {isSaving ? "Salvando…" : editingService ? "Salvar alterações" : "Adicionar serviço"}
+            </button>
+            {editingService ? (
+              <button className="admin-service-form__cancel" onClick={resetForm} type="button">Cancelar edição</button>
+            ) : null}
+          </div>
+        </form>
+
+        <div className="admin-table-wrap">
+          {isLoading ? <p className="notice">Carregando serviços…</p> : null}
+          {!isLoading && !error && services.length === 0 ? <p className="notice">Nenhum serviço cadastrado.</p> : null}
+          {!isLoading && !error && services.length ? (
+            <table className="admin-table admin-services-table">
+              <caption>{services.length} serviços cadastrados</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Serviço</th>
+                  <th scope="col">Duração</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {services.map((service) => (
+                  <tr key={service.id}>
+                    <td><strong>{service.title}</strong></td>
+                    <td>{displayDuration(service.duration_minutes)}</td>
+                    <td>
+                      <strong className={`admin-service-status admin-service-status--${service.is_active ? "active" : "inactive"}`}>
+                        {service.is_active ? "Ativo" : "Inativo"}
+                      </strong>
+                    </td>
+                    <td>
+                      <div className="admin-actions">
+                        <button
+                          aria-label={`Editar serviço ${service.title}`}
+                          className="admin-action admin-action--edit"
+                          disabled={isSaving || serviceBeingDeactivated === service.id}
+                          onClick={() => editService(service)}
+                          type="button"
+                        >
+                          Editar
+                        </button>
+                        {service.is_active ? (
+                          <button
+                            aria-label={`Desativar serviço ${service.title}`}
+                            className="admin-action admin-action--deactivate"
+                            disabled={isSaving || serviceBeingDeactivated === service.id}
+                            onClick={() => void deactivateService(service)}
+                            type="button"
+                          >
+                            {serviceBeingDeactivated === service.id ? "Desativando…" : "Desativar"}
+                          </button>
+                        ) : null}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : null}
+        </div>
+      </div>
+    </section>
+  );
 }
 
 function AdministratorPanel({ accessToken, onLogout }: AdministratorPanelProps) {
@@ -490,6 +768,8 @@ function AdministratorPanel({ accessToken, onLogout }: AdministratorPanelProps) 
             </button>
           </nav>
         ) : null}
+
+        <AdministratorServices accessToken={accessToken} onLogout={onLogout} />
       </section>
     </main>
   );

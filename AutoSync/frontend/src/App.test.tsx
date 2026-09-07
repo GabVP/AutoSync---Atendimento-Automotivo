@@ -7,18 +7,79 @@ import App from "./App";
 const fetchMock = vi.fn();
 let anaRequestStatus = "PENDENTE";
 let joaoRequestStatus = "CONFIRMADO";
+let administratorServices: Array<{
+  id: number;
+  title: string;
+  duration_minutes: number;
+  is_active: boolean;
+}>;
+let nextAdministratorServiceId: number;
 
 beforeEach(() => {
   window.history.replaceState({}, "", "/");
   window.localStorage.clear();
   anaRequestStatus = "PENDENTE";
   joaoRequestStatus = "CONFIRMADO";
+  administratorServices = [{
+    id: 1,
+    title: "Troca de óleo",
+    duration_minutes: 45,
+    is_active: true,
+  }];
+  nextAdministratorServiceId = 2;
   fetchMock.mockImplementation(async (input: string | URL, init?: RequestInit) => {
     const url = input.toString();
     const parsedUrl = new URL(url);
-    if (url.endsWith("/services")) {
+    if (parsedUrl.pathname.endsWith("/admin/services")) {
+      if (init?.method === "POST") {
+        expect(init.headers).toEqual({
+          Authorization: "Bearer administrator-token",
+          "Content-Type": "application/json",
+        });
+        const payload = JSON.parse(String(init.body)) as { title: string; duration_minutes: number };
+        const createdService = {
+          id: nextAdministratorServiceId,
+          title: payload.title,
+          duration_minutes: payload.duration_minutes,
+          is_active: true,
+        };
+        nextAdministratorServiceId += 1;
+        administratorServices.push(createdService);
+        return new Response(JSON.stringify(createdService), { status: 201 });
+      }
+
+      expect(init?.headers).toEqual({ Authorization: "Bearer administrator-token" });
+      return new Response(JSON.stringify(administratorServices), { status: 200 });
+    }
+
+    const serviceUpdateMatch = parsedUrl.pathname.match(/\/admin\/services\/(\d+)$/);
+    if (serviceUpdateMatch) {
+      expect(init?.method).toBe("PATCH");
+      expect(init?.headers).toEqual({
+        Authorization: "Bearer administrator-token",
+        "Content-Type": "application/json",
+      });
+      const serviceId = Number(serviceUpdateMatch[1]);
+      const payload = JSON.parse(String(init?.body)) as Partial<{
+        title: string;
+        duration_minutes: number;
+        is_active: boolean;
+      }>;
+      const serviceIndex = administratorServices.findIndex((service) => service.id === serviceId);
+      if (serviceIndex === -1) {
+        return new Response(null, { status: 404 });
+      }
+      administratorServices[serviceIndex] = { ...administratorServices[serviceIndex], ...payload };
+      return new Response(JSON.stringify(administratorServices[serviceIndex]), { status: 200 });
+    }
+
+    if (parsedUrl.pathname.endsWith("/services")) {
       return new Response(
-        JSON.stringify([{ id: 1, title: "Troca de óleo", duration_minutes: 45 }]),
+        JSON.stringify(
+          administratorServices
+            .filter((service) => service.is_active)
+            .map(({ is_active: _isActive, ...service }) => service),
+        ),
         { status: 200 },
       );
     }
@@ -364,4 +425,38 @@ test("administrator can filter the queue and find a request without email by nam
     expect(requestUrl.searchParams.get("status")).toBe("CONFIRMADO");
     expect(requestUrl.searchParams.get("q")).toBe("João");
   });
+});
+
+test("administrator can create, edit, and deactivate a service", async () => {
+  const user = userEvent.setup();
+  window.history.replaceState({}, "", "/admin");
+  window.localStorage.setItem(
+    "autosync.administrator-session",
+    JSON.stringify({ accessToken: "administrator-token" }),
+  );
+  render(<App />);
+
+  expect(await screen.findByRole("heading", { name: "Gerenciar serviços" })).toBeInTheDocument();
+  expect(await screen.findByRole("button", { name: "Editar serviço Troca de óleo" })).toBeInTheDocument();
+
+  await user.type(screen.getByLabelText("Nome do serviço"), "Revisão completa");
+  await user.type(screen.getByLabelText("Duração estimada (minutos)"), "90");
+  await user.click(screen.getByRole("button", { name: "Adicionar serviço" }));
+
+  expect(await screen.findByRole("status")).toHaveTextContent("Serviço Revisão completa criado.");
+  expect(await screen.findByText("Revisão completa")).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "Editar serviço Revisão completa" }));
+  await user.clear(screen.getByLabelText("Nome do serviço"));
+  await user.type(screen.getByLabelText("Nome do serviço"), "Revisão premium");
+  await user.click(screen.getByRole("button", { name: "Salvar alterações" }));
+
+  expect(await screen.findByRole("status")).toHaveTextContent("Serviço Revisão premium atualizado.");
+  expect(await screen.findByText("Revisão premium")).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "Desativar serviço Revisão premium" }));
+
+  expect(await screen.findByRole("status")).toHaveTextContent("Serviço Revisão premium desativado.");
+  expect(await screen.findByText("Inativo")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Desativar serviço Revisão premium" })).not.toBeInTheDocument();
 });
