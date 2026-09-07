@@ -8,6 +8,7 @@ const fetchMock = vi.fn();
 let anaRequestStatus = "PENDENTE";
 let joaoRequestStatus = "CONFIRMADO";
 let joaoOperationalStatus: "AGENDADO" | "EM_ANDAMENTO" | "ATRASADO" | "CONCLUÍDO";
+let shouldRejectJoaoStartAttempt: boolean;
 let joaoRequestSchedule: {
   scheduled_start_at: string;
   scheduled_end_at: string;
@@ -53,6 +54,7 @@ beforeEach(() => {
   anaRequestStatus = "PENDENTE";
   joaoRequestStatus = "CONFIRMADO";
   joaoOperationalStatus = "AGENDADO";
+  shouldRejectJoaoStartAttempt = false;
   joaoRequestSchedule = {
     scheduled_start_at: "2026-09-08T10:00:00",
     scheduled_end_at: "2026-09-08T10:45:00",
@@ -332,6 +334,15 @@ beforeEach(() => {
       expect(Number(operationalStatusUpdateMatch[1])).toBe(3);
       const payload = JSON.parse(String(init?.body)) as { operational_status: typeof joaoOperationalStatus };
       expect(["EM_ANDAMENTO", "CONCLUÍDO"]).toContain(payload.operational_status);
+      if (payload.operational_status === "EM_ANDAMENTO" && shouldRejectJoaoStartAttempt) {
+        shouldRejectJoaoStartAttempt = false;
+        return new Response(
+          JSON.stringify({
+            detail: "O atendimento só pode ser iniciado a partir de 08/09/2026 às 10:00.",
+          }),
+          { status: 409 },
+        );
+      }
       joaoOperationalStatus = payload.operational_status;
       return new Response(
         JSON.stringify({ id: 3, status: "CONFIRMADO", operational_status: joaoOperationalStatus }),
@@ -628,6 +639,32 @@ test("administrator can start and conclude a scheduled attendance", async () => 
   expect(await screen.findByRole("status")).toHaveTextContent("Atendimento de João Souza concluído.");
   expect(await screen.findByText("Concluído")).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Concluir atendimento de João Souza" })).not.toBeInTheDocument();
+});
+
+test("administrator can retry an attendance start after a premature-start error", async () => {
+  const user = userEvent.setup();
+  window.history.replaceState({}, "", "/admin");
+  window.localStorage.setItem(
+    "autosync.administrator-session",
+    JSON.stringify({ accessToken: "administrator-token" }),
+  );
+  shouldRejectJoaoStartAttempt = true;
+  render(<App />);
+
+  await screen.findByText("Ana Silva");
+  await user.type(screen.getByLabelText("Buscar por nome ou e-mail"), "João");
+  await user.click(screen.getByRole("button", { name: "Buscar" }));
+  expect(await screen.findByText("João Souza")).toBeInTheDocument();
+
+  const startButton = screen.getByRole("button", { name: "Iniciar atendimento de João Souza" });
+  await user.click(startButton);
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "O atendimento só pode ser iniciado a partir de 08/09/2026 às 10:00.",
+  );
+  expect(screen.getByRole("button", { name: "Iniciar atendimento de João Souza" })).toBeEnabled();
+
+  await user.click(screen.getByRole("button", { name: "Iniciar atendimento de João Souza" }));
+  expect(await screen.findByRole("status")).toHaveTextContent("Atendimento de João Souza iniciado.");
 });
 
 test("administrator can reschedule a scheduled attendance", async () => {

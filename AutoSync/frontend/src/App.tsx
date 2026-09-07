@@ -1373,10 +1373,10 @@ function AdministratorPanel({ accessToken, onLogout }: AdministratorPanelProps) 
         {queueError ? <p className="notice notice--error" role="alert">{queueError}</p> : null}
         {statusFeedback ? <p className="notice notice--success" role="status">{statusFeedback}</p> : null}
         {isLoadingQueue ? <p className="notice">Carregando solicitações…</p> : null}
-        {!isLoadingQueue && !queueError && requestPage?.items.length === 0 ? (
+        {!isLoadingQueue && requestPage?.items.length === 0 ? (
           <p className="notice">Nenhuma solicitação encontrada.</p>
         ) : null}
-        {!isLoadingQueue && !queueError && requestPage?.items.length ? (
+        {!isLoadingQueue && requestPage?.items.length ? (
           <div className="admin-table-wrap">
             <table className="admin-table">
               <caption>{requestPage.total} solicitações encontradas</caption>
@@ -1503,7 +1503,7 @@ function AdministratorPanel({ accessToken, onLogout }: AdministratorPanelProps) 
           />
         ) : null}
 
-        {!isLoadingQueue && !queueError && requestPage?.total ? (
+        {!isLoadingQueue && requestPage?.total ? (
           <nav className="admin-pagination" aria-label="Paginação das solicitações">
             <button disabled={page === 1} onClick={() => setPage(page - 1)} type="button">
               Página anterior

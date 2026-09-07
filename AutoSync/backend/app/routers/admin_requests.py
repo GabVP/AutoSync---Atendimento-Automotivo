@@ -318,7 +318,10 @@ def update_administrator_operational_status(
     ):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="An attendance cannot start before its scheduled time.",
+            detail=(
+                "O atendimento só pode ser iniciado a partir de "
+                f"{attendance_request.scheduled_start_at.strftime('%d/%m/%Y às %H:%M')}."
+            ),
         )
 
     try:

@@ -97,6 +97,18 @@ def test_administrator_can_start_and_conclude_an_attendance_to_release_its_resou
 
         client = TestClient(app)
         headers = {"Authorization": f"Bearer {access_token}"}
+        FrozenDateTime.current = datetime(2026, 9, 7, 7, 30)
+        early_start_response = client.patch(
+            f"/api/v1/admin/requests/{active_request_id}/operational-status",
+            headers=headers,
+            json={"operational_status": "EM_ANDAMENTO"},
+        )
+        assert early_start_response.status_code == 409
+        assert early_start_response.json() == {
+            "detail": "O atendimento só pode ser iniciado a partir de 07/09/2026 às 08:00.",
+        }
+
+        FrozenDateTime.current = datetime(2026, 9, 7, 8, 0)
         start_response = client.patch(
             f"/api/v1/admin/requests/{active_request_id}/operational-status",
             headers=headers,
