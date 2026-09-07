@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.routers.auth import router as auth_router
 from app.routers.admin_requests import router as admin_requests_router
 from app.routers.admin_services import router as admin_services_router
+from app.routers.admin_workshop_resources import router as admin_workshop_resources_router
 from app.routers.public_requests import router as public_requests_router
 from app.routers.services import router as services_router
 
@@ -20,6 +21,7 @@ app.include_router(services_router, prefix="/api/v1")
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(admin_requests_router, prefix="/api/v1")
 app.include_router(admin_services_router, prefix="/api/v1")
+app.include_router(admin_workshop_resources_router, prefix="/api/v1")
 
 
 @app.get("/health")
