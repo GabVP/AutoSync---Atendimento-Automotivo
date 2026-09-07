@@ -375,6 +375,13 @@ def update_administrator_request_status(
             detail="The requested status transition is not allowed.",
         ) from error
 
+    if attendance_request.status == "CANCELADO":
+        attendance_request.operational_status = None
+        attendance_request.workshop_box_id = None
+        attendance_request.employee_id = None
+        attendance_request.scheduled_start_at = None
+        attendance_request.scheduled_end_at = None
+
     session.commit()
     session.refresh(attendance_request)
     return AdministratorRequestStatusResponse(

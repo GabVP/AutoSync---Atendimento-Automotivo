@@ -7,14 +7,14 @@ import App from "./App";
 const fetchMock = vi.fn();
 let anaRequestStatus = "PENDENTE";
 let joaoRequestStatus = "CONFIRMADO";
-let joaoOperationalStatus: "AGENDADO" | "EM_ANDAMENTO" | "ATRASADO" | "CONCLUÍDO";
+let joaoOperationalStatus: "AGENDADO" | "EM_ANDAMENTO" | "ATRASADO" | "CONCLUÍDO" | null;
 let shouldRejectJoaoStartAttempt: boolean;
 let joaoRequestSchedule: {
   scheduled_start_at: string;
   scheduled_end_at: string;
   workshop_box_label: string;
   employee_name: string;
-};
+} | null;
 let anaRequestSchedule: {
   operational_status: "AGENDADO";
   scheduled_start_at: string;
@@ -193,7 +193,10 @@ beforeEach(() => {
         tracking_code: "ATS-00000003",
         created_at: "2026-09-03T10:00:00",
         operational_status: joaoOperationalStatus,
-        ...joaoRequestSchedule,
+        scheduled_start_at: joaoRequestSchedule?.scheduled_start_at ?? null,
+        scheduled_end_at: joaoRequestSchedule?.scheduled_end_at ?? null,
+        workshop_box_label: joaoRequestSchedule?.workshop_box_label ?? null,
+        employee_name: joaoRequestSchedule?.employee_name ?? null,
       };
 
       if (status === "CONFIRMADO" || search === "João") {
@@ -364,6 +367,10 @@ beforeEach(() => {
         anaRequestStatus = status.status;
       } else if (requestId === 3) {
         joaoRequestStatus = status.status;
+        if (status.status === "CANCELADO") {
+          joaoOperationalStatus = null;
+          joaoRequestSchedule = null;
+        }
       } else {
         throw new Error(`Unexpected request status update for ${requestId}.`);
       }
@@ -719,6 +726,9 @@ test("administrator can cancel pending and confirmed requests with refreshed fee
   });
   expect(await screen.findByText("Solicitação cancelada", { selector: "strong" })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Cancelar solicitação de João Souza" })).not.toBeInTheDocument();
+  expect(screen.queryByText("Agendado", { selector: "strong" })).not.toBeInTheDocument();
+  expect(screen.queryByText(/08\/09\/2026, 10:00/, { selector: ".admin-schedule-summary" })).not.toBeInTheDocument();
+  expect(screen.getByText("A definir")).toBeInTheDocument();
 });
 
 test("administrator can filter the queue and find a request without email by name", async () => {

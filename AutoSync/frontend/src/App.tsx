@@ -1227,7 +1227,15 @@ function AdministratorPanel({ accessToken, onLogout }: AdministratorPanelProps) 
         ...currentPage,
         items: currentPage.items.map((currentRequest) => (
           currentRequest.id === updatedRequest.id
-            ? { ...currentRequest, status: updatedRequest.status }
+            ? {
+              ...currentRequest,
+              status: updatedRequest.status,
+              operational_status: null,
+              scheduled_start_at: null,
+              scheduled_end_at: null,
+              workshop_box_label: null,
+              employee_name: null,
+            }
             : currentRequest
         )),
       } : currentPage);
