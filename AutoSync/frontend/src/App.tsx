@@ -933,6 +933,7 @@ function AdministratorScheduling({
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [schedulingLoadAttempt, setSchedulingLoadAttempt] = useState(0);
 
   useEffect(() => {
     let isMounted = true;
@@ -998,7 +999,7 @@ function AdministratorScheduling({
     return () => {
       isMounted = false;
     };
-  }, [accessToken, onLogout, request.id]);
+  }, [accessToken, onLogout, request.id, schedulingLoadAttempt]);
 
   async function submitScheduling(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1053,7 +1054,7 @@ function AdministratorScheduling({
 
       {isLoading ? <p className="notice">Buscando o melhor horário disponível…</p> : null}
       {error ? <p className="notice notice--error" role="alert">{error}</p> : null}
-      {!isLoading && !error ? (
+      {!isLoading && suggestion ? (
         <form className="admin-scheduling__form" onSubmit={submitScheduling}>
           {suggestion ? (
             <p className="admin-scheduling__suggestion">
@@ -1103,6 +1104,20 @@ function AdministratorScheduling({
             </button>
           </div>
         </form>
+      ) : null}
+      {!isLoading && !suggestion ? (
+        <div className="admin-scheduling__actions">
+          <button
+            className="button"
+            onClick={() => setSchedulingLoadAttempt((currentAttempt) => currentAttempt + 1)}
+            type="button"
+          >
+            Tentar novamente
+          </button>
+          <button className="admin-service-form__cancel" onClick={onCancel} type="button">
+            Fechar
+          </button>
+        </div>
       ) : null}
     </section>
   );

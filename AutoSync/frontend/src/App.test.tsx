@@ -9,6 +9,8 @@ let anaRequestStatus = "PENDENTE";
 let joaoRequestStatus = "CONFIRMADO";
 let joaoOperationalStatus: "AGENDADO" | "EM_ANDAMENTO" | "ATRASADO" | "CONCLUÍDO" | null;
 let shouldRejectJoaoStartAttempt: boolean;
+let shouldRejectAnaSchedulingAttempt: boolean;
+let shouldRejectAnaSchedulingLoad: boolean;
 let joaoRequestSchedule: {
   scheduled_start_at: string;
   scheduled_end_at: string;
@@ -55,6 +57,8 @@ beforeEach(() => {
   joaoRequestStatus = "CONFIRMADO";
   joaoOperationalStatus = "AGENDADO";
   shouldRejectJoaoStartAttempt = false;
+  shouldRejectAnaSchedulingAttempt = false;
+  shouldRejectAnaSchedulingLoad = false;
   joaoRequestSchedule = {
     scheduled_start_at: "2026-09-08T10:00:00",
     scheduled_end_at: "2026-09-08T10:45:00",
@@ -264,6 +268,10 @@ beforeEach(() => {
       expect(init?.headers).toEqual({ Authorization: "Bearer administrator-token" });
       const requestId = Number(schedulingSuggestionMatch[1]);
       expect([1, 3]).toContain(requestId);
+      if (requestId === 1 && shouldRejectAnaSchedulingLoad) {
+        shouldRejectAnaSchedulingLoad = false;
+        return new Response(null, { status: 503 });
+      }
       const scheduledStartAt = requestId === 3 ? "2026-09-08T10:45:00" : "2026-09-08T08:00:00";
       const scheduledEndAt = requestId === 3 ? "2026-09-08T11:30:00" : "2026-09-08T08:45:00";
       return new Response(
@@ -294,6 +302,15 @@ beforeEach(() => {
         employee_id: 1,
         scheduled_start_at: isRescheduling ? "2026-09-08T10:45" : "2026-09-08T08:00",
       });
+      if (!isRescheduling && shouldRejectAnaSchedulingAttempt) {
+        shouldRejectAnaSchedulingAttempt = false;
+        return new Response(
+          JSON.stringify({
+            detail: "O horário escolhido não está mais disponível. Escolha outro horário e tente novamente.",
+          }),
+          { status: 409 },
+        );
+      }
       if (isRescheduling) {
         joaoRequestSchedule = {
           scheduled_start_at: "2026-09-08T10:45:00",
@@ -621,6 +638,51 @@ test("administrator can schedule a pending request from the suggestion while rev
   expect(await screen.findByText("Atendimento confirmado", { selector: "strong" })).toBeInTheDocument();
   expect(await screen.findByText("Agendado")).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Agendar solicitação de Ana Silva" })).not.toBeInTheDocument();
+});
+
+test("administrator can retry loading a scheduling form after an error", async () => {
+  const user = userEvent.setup();
+  window.history.replaceState({}, "", "/admin");
+  window.localStorage.setItem(
+    "autosync.administrator-session",
+    JSON.stringify({ accessToken: "administrator-token" }),
+  );
+  shouldRejectAnaSchedulingLoad = true;
+  render(<App />);
+
+  await screen.findByText("Ana Silva");
+  await user.click(screen.getByRole("button", { name: "Agendar solicitação de Ana Silva" }));
+
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Não foi possível encontrar uma sugestão de horário para esta solicitação.",
+  );
+  await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
+  expect(await screen.findByText("Sugestão: Box 1 com Ana Martins em 08/09/2026, 08:00.")).toBeInTheDocument();
+});
+
+test("administrator can retry scheduling after an error without losing the form", async () => {
+  const user = userEvent.setup();
+  window.history.replaceState({}, "", "/admin");
+  window.localStorage.setItem(
+    "autosync.administrator-session",
+    JSON.stringify({ accessToken: "administrator-token" }),
+  );
+  shouldRejectAnaSchedulingAttempt = true;
+  render(<App />);
+
+  await screen.findByText("Ana Silva");
+  await user.click(screen.getByRole("button", { name: "Agendar solicitação de Ana Silva" }));
+  expect(await screen.findByText("Sugestão: Box 1 com Ana Martins em 08/09/2026, 08:00.")).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "Confirmar agendamento" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "O horário escolhido não está mais disponível. Escolha outro horário e tente novamente.",
+  );
+  expect(screen.getByLabelText("Início do atendimento")).toHaveValue("2026-09-08T08:00");
+  expect(screen.getByRole("button", { name: "Confirmar agendamento" })).toBeEnabled();
+
+  await user.click(screen.getByRole("button", { name: "Confirmar agendamento" }));
+  expect(await screen.findByRole("status")).toHaveTextContent("Solicitação de Ana Silva agendada.");
 });
 
 test("administrator can start and conclude a scheduled attendance", async () => {
