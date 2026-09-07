@@ -223,3 +223,79 @@ def test_scheduling_confirmation_rejects_overlapping_box_or_employee_allocations
         assert persisted_request.employee_id is None
     finally:
         app.dependency_overrides.clear()
+
+
+def test_administrator_can_reschedule_a_scheduled_request(monkeypatch) -> None:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+
+    def override_get_session():
+        with Session(engine) as session:
+            yield session
+
+    app.dependency_overrides[get_session] = override_get_session
+    monkeypatch.setattr("app.routers.admin_requests.datetime", FrozenDateTime, raising=False)
+    try:
+        with Session(engine) as session:
+            administrator = Administrator(
+                email="admin@autosync.example.com",
+                password_hash=hash_password("autosync-demo"),
+            )
+            service = Service(title="Troca de óleo", duration_minutes=45, is_active=True)
+            workshop_box = WorkshopBox(label="Box 1", is_active=True)
+            employee = Employee(name="Ana Martins", is_active=True)
+            session.add_all([administrator, service, workshop_box, employee])
+            session.commit()
+            attendance_request = AttendanceRequest(
+                name="Ana Silva",
+                phone="11987654321",
+                email="ana@example.com",
+                vehicle_make="Honda",
+                vehicle_model="Fit",
+                vehicle_plate="ABC1D23",
+                service_id=service.id,
+                description="Troca de óleo e filtro",
+                status="CONFIRMADO",
+                tracking_code="ATS-00000001",
+                workshop_box_id=workshop_box.id,
+                employee_id=employee.id,
+                scheduled_start_at=datetime(2026, 9, 7, 8, 0),
+                scheduled_end_at=datetime(2026, 9, 7, 8, 45),
+                operational_status="AGENDADO",
+            )
+            session.add(attendance_request)
+            session.commit()
+            request_id = attendance_request.id
+            workshop_box_id = workshop_box.id
+            employee_id = employee.id
+            access_token = create_access_token(administrator)
+
+        response = TestClient(app).patch(
+            f"/api/v1/admin/requests/{request_id}/schedule",
+            headers={"Authorization": f"Bearer {access_token}"},
+            json={
+                "workshop_box_id": workshop_box_id,
+                "employee_id": employee_id,
+                "scheduled_start_at": "2026-09-07T08:15:00",
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json()["scheduled_start_at"] == "2026-09-07T08:15:00"
+        assert response.json()["scheduled_end_at"] == "2026-09-07T09:00:00"
+        with Session(engine) as session:
+            persisted_request = session.scalar(
+                select(AttendanceRequest).where(AttendanceRequest.id == request_id)
+            )
+
+        assert persisted_request is not None
+        assert persisted_request.status == "CONFIRMADO"
+        assert persisted_request.operational_status == "AGENDADO"
+        assert persisted_request.scheduled_start_at == datetime(2026, 9, 7, 8, 15)
+        assert persisted_request.scheduled_end_at == datetime(2026, 9, 7, 9, 0)
+    finally:
+        app.dependency_overrides.clear()

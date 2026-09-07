@@ -923,6 +923,7 @@ function AdministratorScheduling({
   onScheduled,
   request,
 }: AdministratorSchedulingProps) {
+  const isRescheduling = request.status === "CONFIRMADO";
   const [suggestion, setSuggestion] = useState<AdministratorSchedulingSuggestion | null>(null);
   const [boxes, setBoxes] = useState<AdministratorWorkshopResource[]>([]);
   const [employees, setEmployees] = useState<AdministratorWorkshopResource[]>([]);
@@ -1010,7 +1011,7 @@ function AdministratorScheduling({
     setIsSubmitting(true);
     try {
       const response = await fetch(`${apiBaseUrl}/admin/requests/${request.id}/schedule`, {
-        method: "POST",
+        method: isRescheduling ? "PATCH" : "POST",
         headers: {
           Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
@@ -1046,7 +1047,7 @@ function AdministratorScheduling({
     <section className="admin-scheduling" aria-labelledby="admin-scheduling-title">
       <div className="admin-scheduling__heading">
         <p className="eyebrow">CONFIRMAÇÃO COM CAPACIDADE</p>
-        <h2 id="admin-scheduling-title">Agendar {request.name}</h2>
+        <h2 id="admin-scheduling-title">{isRescheduling ? "Reagendar" : "Agendar"} {request.name}</h2>
         <p>Use a sugestão ou ajuste os recursos e o horário antes de confirmar o atendimento.</p>
       </div>
 
@@ -1093,7 +1094,9 @@ function AdministratorScheduling({
           </label>
           <div className="admin-scheduling__actions">
             <button className="button" disabled={isSubmitting} type="submit">
-              {isSubmitting ? "Agendando…" : "Confirmar agendamento"}
+              {isSubmitting
+                ? isRescheduling ? "Reagendando…" : "Agendando…"
+                : isRescheduling ? "Confirmar reagendamento" : "Confirmar agendamento"}
             </button>
             <button className="admin-service-form__cancel" disabled={isSubmitting} onClick={onCancel} type="button">
               Fechar
@@ -1244,6 +1247,7 @@ function AdministratorPanel({ accessToken, onLogout }: AdministratorPanelProps) 
 
   function applySchedulingConfirmation(confirmation: AdministratorSchedulingConfirmation) {
     const requestName = requestBeingScheduled?.name ?? "selecionada";
+    const wasRescheduled = requestBeingScheduled?.status === "CONFIRMADO";
     setRequestPage((currentPage) => currentPage ? {
       ...currentPage,
       items: currentPage.items.map((currentRequest) => (
@@ -1261,7 +1265,11 @@ function AdministratorPanel({ accessToken, onLogout }: AdministratorPanelProps) 
       )),
     } : currentPage);
     setRequestBeingScheduled(null);
-    setStatusFeedback(`Solicitação de ${requestName} agendada.`);
+    setStatusFeedback(
+      wasRescheduled
+        ? `Atendimento de ${requestName} reagendado.`
+        : `Solicitação de ${requestName} agendada.`,
+    );
     setQueueRefresh((currentRefresh) => currentRefresh + 1);
   }
 
@@ -1420,6 +1428,17 @@ function AdministratorPanel({ accessToken, onLogout }: AdministratorPanelProps) 
                             type="button"
                           >
                             Agendar
+                          </button>
+                        ) : null}
+                        {request.status === "CONFIRMADO" && request.operational_status === "AGENDADO" ? (
+                          <button
+                            aria-label={`Reagendar atendimento de ${request.name}`}
+                            className="admin-action admin-action--confirm"
+                            disabled={requestStatusBeingUpdated?.requestId === request.id}
+                            onClick={() => setRequestBeingScheduled(request)}
+                            type="button"
+                          >
+                            Reagendar
                           </button>
                         ) : null}
                         {request.status === "CONFIRMADO" && request.operational_status === "AGENDADO" ? (

@@ -8,6 +8,12 @@ const fetchMock = vi.fn();
 let anaRequestStatus = "PENDENTE";
 let joaoRequestStatus = "CONFIRMADO";
 let joaoOperationalStatus: "AGENDADO" | "EM_ANDAMENTO" | "ATRASADO" | "CONCLUÍDO";
+let joaoRequestSchedule: {
+  scheduled_start_at: string;
+  scheduled_end_at: string;
+  workshop_box_label: string;
+  employee_name: string;
+};
 let anaRequestSchedule: {
   operational_status: "AGENDADO";
   scheduled_start_at: string;
@@ -47,6 +53,12 @@ beforeEach(() => {
   anaRequestStatus = "PENDENTE";
   joaoRequestStatus = "CONFIRMADO";
   joaoOperationalStatus = "AGENDADO";
+  joaoRequestSchedule = {
+    scheduled_start_at: "2026-09-08T10:00:00",
+    scheduled_end_at: "2026-09-08T10:45:00",
+    workshop_box_label: "Box 1",
+    employee_name: "Ana Martins",
+  };
   anaRequestSchedule = null;
   administratorServices = [{
     id: 1,
@@ -179,10 +191,7 @@ beforeEach(() => {
         tracking_code: "ATS-00000003",
         created_at: "2026-09-03T10:00:00",
         operational_status: joaoOperationalStatus,
-        scheduled_start_at: "2026-09-08T10:00:00",
-        scheduled_end_at: "2026-09-08T10:45:00",
-        workshop_box_label: "Box 1",
-        employee_name: "Ana Martins",
+        ...joaoRequestSchedule,
       };
 
       if (status === "CONFIRMADO" || search === "João") {
@@ -248,16 +257,19 @@ beforeEach(() => {
     const schedulingSuggestionMatch = parsedUrl.pathname.match(/\/admin\/requests\/(\d+)\/scheduling-suggestion$/);
     if (schedulingSuggestionMatch) {
       expect(init?.headers).toEqual({ Authorization: "Bearer administrator-token" });
-      expect(Number(schedulingSuggestionMatch[1])).toBe(1);
+      const requestId = Number(schedulingSuggestionMatch[1]);
+      expect([1, 3]).toContain(requestId);
+      const scheduledStartAt = requestId === 3 ? "2026-09-08T10:45:00" : "2026-09-08T08:00:00";
+      const scheduledEndAt = requestId === 3 ? "2026-09-08T11:30:00" : "2026-09-08T08:45:00";
       return new Response(
         JSON.stringify({
-          request_id: 1,
+          request_id: requestId,
           workshop_box_id: 1,
           workshop_box_label: "Box 1",
           employee_id: 1,
           employee_name: "Ana Martins",
-          scheduled_start_at: "2026-09-08T08:00:00",
-          scheduled_end_at: "2026-09-08T08:45:00",
+          scheduled_start_at: scheduledStartAt,
+          scheduled_end_at: scheduledEndAt,
         }),
         { status: 200 },
       );
@@ -265,17 +277,37 @@ beforeEach(() => {
 
     const schedulingConfirmationMatch = parsedUrl.pathname.match(/\/admin\/requests\/(\d+)\/schedule$/);
     if (schedulingConfirmationMatch) {
-      expect(init?.method).toBe("POST");
+      const requestId = Number(schedulingConfirmationMatch[1]);
+      const isRescheduling = requestId === 3;
+      expect(init?.method).toBe(isRescheduling ? "PATCH" : "POST");
       expect(init?.headers).toEqual({
         Authorization: "Bearer administrator-token",
         "Content-Type": "application/json",
       });
-      expect(Number(schedulingConfirmationMatch[1])).toBe(1);
       expect(JSON.parse(String(init?.body))).toEqual({
         workshop_box_id: 1,
         employee_id: 1,
-        scheduled_start_at: "2026-09-08T08:00",
+        scheduled_start_at: isRescheduling ? "2026-09-08T10:45" : "2026-09-08T08:00",
       });
+      if (isRescheduling) {
+        joaoRequestSchedule = {
+          scheduled_start_at: "2026-09-08T10:45:00",
+          scheduled_end_at: "2026-09-08T11:30:00",
+          workshop_box_label: "Box 1",
+          employee_name: "Ana Martins",
+        };
+        return new Response(
+          JSON.stringify({
+            id: requestId,
+            status: "CONFIRMADO",
+            operational_status: "AGENDADO",
+            workshop_box_id: 1,
+            employee_id: 1,
+            ...joaoRequestSchedule,
+          }),
+          { status: 200 },
+        );
+      }
       anaRequestStatus = "CONFIRMADO";
       anaRequestSchedule = {
         operational_status: "AGENDADO",
@@ -596,6 +628,30 @@ test("administrator can start and conclude a scheduled attendance", async () => 
   expect(await screen.findByRole("status")).toHaveTextContent("Atendimento de João Souza concluído.");
   expect(await screen.findByText("Concluído")).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Concluir atendimento de João Souza" })).not.toBeInTheDocument();
+});
+
+test("administrator can reschedule a scheduled attendance", async () => {
+  const user = userEvent.setup();
+  window.history.replaceState({}, "", "/admin");
+  window.localStorage.setItem(
+    "autosync.administrator-session",
+    JSON.stringify({ accessToken: "administrator-token" }),
+  );
+  render(<App />);
+
+  await screen.findByText("Ana Silva");
+  await user.type(screen.getByLabelText("Buscar por nome ou e-mail"), "João");
+  await user.click(screen.getByRole("button", { name: "Buscar" }));
+  expect(await screen.findByText("João Souza")).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "Reagendar atendimento de João Souza" }));
+
+  expect(await screen.findByRole("heading", { name: "Reagendar João Souza" })).toBeInTheDocument();
+  expect(await screen.findByText("Sugestão: Box 1 com Ana Martins em 08/09/2026, 10:45.")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Confirmar reagendamento" }));
+
+  expect(await screen.findByRole("status")).toHaveTextContent("Atendimento de João Souza reagendado.");
+  expect(await screen.findByText(/08\/09\/2026, 10:45/, { selector: ".admin-schedule-summary" })).toBeInTheDocument();
 });
 
 test("administrator can cancel pending and confirmed requests with refreshed feedback", async () => {

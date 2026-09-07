@@ -47,6 +47,13 @@ def _confirmed_allocation_filters() -> tuple:
     )
 
 
+def _is_eligible_for_rescheduling(attendance_request: AttendanceRequest) -> bool:
+    return (
+        attendance_request.status == "CONFIRMADO"
+        and attendance_request.operational_status == "AGENDADO"
+    )
+
+
 @router.get(
     "/{request_id}/scheduling-suggestion",
     response_model=AdministratorSchedulingSuggestionResponse,
@@ -62,10 +69,11 @@ def suggest_administrator_request_scheduling(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="The requested attendance request was not found.",
         )
-    if attendance_request.status != "PENDENTE":
+    is_rescheduling = _is_eligible_for_rescheduling(attendance_request)
+    if attendance_request.status != "PENDENTE" and not is_rescheduling:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Only pending requests can receive a scheduling suggestion.",
+            detail="Only pending requests or scheduled confirmed requests can receive a scheduling suggestion.",
         )
 
     active_boxes = list(
@@ -78,6 +86,14 @@ def suggest_administrator_request_scheduling(
             select(Employee).where(Employee.is_active.is_(True)).order_by(Employee.id)
         )
     )
+    allocation_query = select(
+        AttendanceRequest.workshop_box_id,
+        AttendanceRequest.employee_id,
+        AttendanceRequest.scheduled_start_at,
+        AttendanceRequest.scheduled_end_at,
+    ).where(*_confirmed_allocation_filters())
+    if is_rescheduling:
+        allocation_query = allocation_query.where(AttendanceRequest.id != attendance_request.id)
     allocations = [
         ScheduledAllocation(
             workshop_box_id=workshop_box_id,
@@ -85,14 +101,7 @@ def suggest_administrator_request_scheduling(
             scheduled_start_at=scheduled_start_at,
             scheduled_end_at=scheduled_end_at,
         )
-        for workshop_box_id, employee_id, scheduled_start_at, scheduled_end_at in session.execute(
-            select(
-                AttendanceRequest.workshop_box_id,
-                AttendanceRequest.employee_id,
-                AttendanceRequest.scheduled_start_at,
-                AttendanceRequest.scheduled_end_at,
-            ).where(*_confirmed_allocation_filters())
-        )
+        for workshop_box_id, employee_id, scheduled_start_at, scheduled_end_at in session.execute(allocation_query)
     ]
     suggestion = find_nearest_available_slot(
         requested_after=datetime.now(),
@@ -126,15 +135,12 @@ def suggest_administrator_request_scheduling(
     )
 
 
-@router.post(
-    "/{request_id}/schedule",
-    response_model=AdministratorSchedulingConfirmationResponse,
-)
-def confirm_administrator_request_schedule(
+def _persist_administrator_request_schedule(
     request_id: int,
     payload: AdministratorSchedulingConfirmationRequest,
-    session: Session = Depends(get_session),
-    _: Administrator = Depends(get_current_administrator),
+    session: Session,
+    *,
+    is_rescheduling: bool,
 ) -> AdministratorSchedulingConfirmationResponse:
     attendance_request = session.get(AttendanceRequest, request_id)
     if attendance_request is None:
@@ -142,7 +148,13 @@ def confirm_administrator_request_schedule(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="The requested attendance request was not found.",
         )
-    if attendance_request.status != "PENDENTE":
+    if is_rescheduling:
+        if not _is_eligible_for_rescheduling(attendance_request):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Only scheduled confirmed requests can be rescheduled.",
+            )
+    elif attendance_request.status != "PENDENTE":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Only pending requests can be scheduled.",
@@ -181,29 +193,29 @@ def confirm_administrator_request_schedule(
             detail="The selected workshop resources must be active.",
         )
 
-    conflicting_request_id = session.scalar(
-        select(AttendanceRequest.id)
-        .where(
-            *_confirmed_allocation_filters(),
-            AttendanceRequest.scheduled_start_at < scheduled_end_at,
-            AttendanceRequest.scheduled_end_at > payload.scheduled_start_at,
-            or_(
-                AttendanceRequest.workshop_box_id == workshop_box.id,
-                AttendanceRequest.employee_id == employee.id,
-            ),
-        )
-        .limit(1)
+    conflict_query = select(AttendanceRequest.id).where(
+        *_confirmed_allocation_filters(),
+        AttendanceRequest.scheduled_start_at < scheduled_end_at,
+        AttendanceRequest.scheduled_end_at > payload.scheduled_start_at,
+        or_(
+            AttendanceRequest.workshop_box_id == workshop_box.id,
+            AttendanceRequest.employee_id == employee.id,
+        ),
     )
+    if is_rescheduling:
+        conflict_query = conflict_query.where(AttendanceRequest.id != attendance_request.id)
+    conflicting_request_id = session.scalar(conflict_query.limit(1))
     if conflicting_request_id is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="The selected workshop resources are already allocated in this interval.",
         )
 
-    attendance_request.status = transition_request_status(
-        attendance_request.status,
-        "CONFIRMADO",
-    )
+    if not is_rescheduling:
+        attendance_request.status = transition_request_status(
+            attendance_request.status,
+            "CONFIRMADO",
+        )
     attendance_request.operational_status = "AGENDADO"
     attendance_request.workshop_box_id = workshop_box.id
     attendance_request.employee_id = employee.id
@@ -222,6 +234,42 @@ def confirm_administrator_request_schedule(
         employee_name=employee.name,
         scheduled_start_at=attendance_request.scheduled_start_at,
         scheduled_end_at=attendance_request.scheduled_end_at,
+    )
+
+
+@router.post(
+    "/{request_id}/schedule",
+    response_model=AdministratorSchedulingConfirmationResponse,
+)
+def confirm_administrator_request_schedule(
+    request_id: int,
+    payload: AdministratorSchedulingConfirmationRequest,
+    session: Session = Depends(get_session),
+    _: Administrator = Depends(get_current_administrator),
+) -> AdministratorSchedulingConfirmationResponse:
+    return _persist_administrator_request_schedule(
+        request_id,
+        payload,
+        session,
+        is_rescheduling=False,
+    )
+
+
+@router.patch(
+    "/{request_id}/schedule",
+    response_model=AdministratorSchedulingConfirmationResponse,
+)
+def reschedule_administrator_request(
+    request_id: int,
+    payload: AdministratorSchedulingConfirmationRequest,
+    session: Session = Depends(get_session),
+    _: Administrator = Depends(get_current_administrator),
+) -> AdministratorSchedulingConfirmationResponse:
+    return _persist_administrator_request_schedule(
+        request_id,
+        payload,
+        session,
+        is_rescheduling=True,
     )
 
 
