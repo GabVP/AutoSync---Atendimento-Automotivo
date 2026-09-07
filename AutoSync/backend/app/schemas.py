@@ -25,6 +25,11 @@ class AdministratorRequestSummary(BaseModel):
     status: Literal["PENDENTE", "CONFIRMADO", "CANCELADO"]
     tracking_code: str
     created_at: datetime
+    operational_status: Literal["AGENDADO", "EM_ANDAMENTO", "ATRASADO", "CONCLUÍDO"] | None = None
+    scheduled_start_at: datetime | None = None
+    scheduled_end_at: datetime | None = None
+    workshop_box_label: str | None = None
+    employee_name: str | None = None
 
 
 class AdministratorRequestPage(BaseModel):

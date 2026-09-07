@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_session
 from app.models import Administrator, AttendanceRequest, Employee, Service, WorkshopBox
+from app.operational_status import refresh_overdue_operational_status
 from app.request_status import InvalidRequestStatusTransition, transition_request_status
 from app.scheduling import (
     InvalidScheduleInterval,
@@ -287,13 +288,37 @@ def list_administrator_requests(
         select(func.count()).select_from(AttendanceRequest).where(*filters)
     ) or 0
     rows = session.execute(
-        select(AttendanceRequest, Service.title)
+        select(
+            AttendanceRequest,
+            Service.title,
+            WorkshopBox.label,
+            Employee.name,
+        )
         .join(Service, AttendanceRequest.service_id == Service.id)
+        .outerjoin(WorkshopBox, AttendanceRequest.workshop_box_id == WorkshopBox.id)
+        .outerjoin(Employee, AttendanceRequest.employee_id == Employee.id)
         .where(*filters)
         .order_by(AttendanceRequest.created_at.desc(), AttendanceRequest.id.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
     ).all()
+
+    now = datetime.now()
+    has_operational_status_updates = False
+    for attendance_request, _, _, _ in rows:
+        if attendance_request.status != "CONFIRMADO":
+            continue
+        next_operational_status = refresh_overdue_operational_status(
+            current_status=attendance_request.operational_status,
+            scheduled_start_at=attendance_request.scheduled_start_at,
+            scheduled_end_at=attendance_request.scheduled_end_at,
+            now=now,
+        )
+        if next_operational_status != attendance_request.operational_status:
+            attendance_request.operational_status = next_operational_status
+            has_operational_status_updates = True
+    if has_operational_status_updates:
+        session.commit()
 
     return AdministratorRequestPage(
         items=[
@@ -306,8 +331,13 @@ def list_administrator_requests(
                 status=attendance_request.status,
                 tracking_code=attendance_request.tracking_code,
                 created_at=attendance_request.created_at,
+                operational_status=attendance_request.operational_status,
+                scheduled_start_at=attendance_request.scheduled_start_at,
+                scheduled_end_at=attendance_request.scheduled_end_at,
+                workshop_box_label=workshop_box_label,
+                employee_name=employee_name,
             )
-            for attendance_request, service_title in rows
+            for attendance_request, service_title, workshop_box_label, employee_name in rows
         ],
         page=page,
         page_size=page_size,

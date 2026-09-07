@@ -115,6 +115,11 @@ def test_administrator_can_filter_search_and_paginate_the_request_queue() -> Non
                     "status": "PENDENTE",
                     "tracking_code": "ATS-00000001",
                     "created_at": "2026-09-01T10:00:00",
+                    "operational_status": None,
+                    "scheduled_start_at": None,
+                    "scheduled_end_at": None,
+                    "workshop_box_label": None,
+                    "employee_name": None,
                 }
             ],
             "page": 2,
@@ -133,6 +138,11 @@ def test_administrator_can_filter_search_and_paginate_the_request_queue() -> Non
                 "status": "CONFIRMADO",
                 "tracking_code": "ATS-00000003",
                 "created_at": "2026-09-03T10:00:00",
+                "operational_status": None,
+                "scheduled_start_at": None,
+                "scheduled_end_at": None,
+                "workshop_box_label": None,
+                "employee_name": None,
             }
         ]
     finally:
