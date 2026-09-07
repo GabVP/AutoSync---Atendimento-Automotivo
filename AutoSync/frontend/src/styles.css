@@ -148,6 +148,7 @@ textarea { resize: vertical; min-height: 89px; }
 .admin-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .admin-action { min-width: 96px; min-height: 32px; padding: 7px 10px; border: 1px solid #13934a; border-radius: 4px; background: #13934a; color: #fff; font-size: 11px; font-weight: 750; }
 .admin-action--cancel { border-color: #bd1722; background: #bd1722; }
+.admin-action--complete { border-color: #355776; background: #355776; }
 .admin-action:disabled { opacity: .7; cursor: wait; }
 .admin-action__empty { color: #9aa1aa; }
 .admin-operational-status { display: inline-flex; margin-top: 6px; padding: 5px 8px; border-radius: 999px; font-size: 10px; }

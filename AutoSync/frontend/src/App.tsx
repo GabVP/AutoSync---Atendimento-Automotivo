@@ -59,6 +59,14 @@ type AdministratorRequestStatusResponse = {
 
 type AdministratorRequestActionStatus = "CANCELADO";
 
+type AdministratorOperationalActionStatus = "EM_ANDAMENTO" | "CONCLUÍDO";
+
+type AdministratorOperationalStatusResponse = {
+  id: number;
+  status: "CONFIRMADO";
+  operational_status: Exclude<OperationalStatus, "AGENDADO">;
+};
+
 type AdministratorSchedulingSuggestion = {
   request_id: number;
   workshop_box_id: number;
@@ -1106,6 +1114,10 @@ function AdministratorPanel({ accessToken, onLogout }: AdministratorPanelProps) 
   } | null>(null);
   const [statusFeedback, setStatusFeedback] = useState<string | null>(null);
   const [requestBeingScheduled, setRequestBeingScheduled] = useState<AdministratorRequestSummary | null>(null);
+  const [operationalStatusBeingUpdated, setOperationalStatusBeingUpdated] = useState<{
+    requestId: number;
+    status: AdministratorOperationalActionStatus;
+  } | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -1247,6 +1259,59 @@ function AdministratorPanel({ accessToken, onLogout }: AdministratorPanelProps) 
     setQueueRefresh((currentRefresh) => currentRefresh + 1);
   }
 
+  async function updateOperationalStatus(
+    request: AdministratorRequestSummary,
+    nextStatus: AdministratorOperationalActionStatus,
+  ) {
+    const action = nextStatus === "EM_ANDAMENTO"
+      ? { infinitive: "iniciar", pastParticiple: "iniciado" }
+      : { infinitive: "concluir", pastParticiple: "concluído" };
+    setQueueError(null);
+    setStatusFeedback(null);
+    setOperationalStatusBeingUpdated({ requestId: request.id, status: nextStatus });
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/admin/requests/${request.id}/operational-status`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ operational_status: nextStatus }),
+      });
+      if (response.status === 401) {
+        onLogout();
+        return;
+      }
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null) as { detail?: string } | null;
+        throw new Error(payload?.detail ?? `Não foi possível ${action.infinitive} o atendimento.`);
+      }
+
+      const updatedRequest = (await response.json()) as AdministratorOperationalStatusResponse;
+      if (updatedRequest.status !== "CONFIRMADO" || updatedRequest.operational_status !== nextStatus) {
+        throw new Error(`Não foi possível ${action.infinitive} o atendimento.`);
+      }
+
+      setRequestPage((currentPage) => currentPage ? {
+        ...currentPage,
+        items: currentPage.items.map((currentRequest) => (
+          currentRequest.id === updatedRequest.id
+            ? { ...currentRequest, operational_status: updatedRequest.operational_status }
+            : currentRequest
+        )),
+      } : currentPage);
+      setStatusFeedback(`Atendimento de ${request.name} ${action.pastParticiple}.`);
+      setQueueRefresh((currentRefresh) => currentRefresh + 1);
+    } catch (error) {
+      setQueueError(
+        error instanceof Error ? error.message : `Não foi possível ${action.infinitive} o atendimento.`,
+      );
+    } finally {
+      setOperationalStatusBeingUpdated(null);
+    }
+  }
+
   const totalPages = Math.max(requestPage?.total_pages ?? 1, 1);
 
   return (
@@ -1351,6 +1416,35 @@ function AdministratorPanel({ accessToken, onLogout }: AdministratorPanelProps) 
                             Agendar
                           </button>
                         ) : null}
+                        {request.status === "CONFIRMADO" && request.operational_status === "AGENDADO" ? (
+                          <button
+                            aria-label={`Iniciar atendimento de ${request.name}`}
+                            className="admin-action admin-action--start"
+                            disabled={operationalStatusBeingUpdated?.requestId === request.id}
+                            onClick={() => void updateOperationalStatus(request, "EM_ANDAMENTO")}
+                            type="button"
+                          >
+                            {operationalStatusBeingUpdated?.requestId === request.id
+                              && operationalStatusBeingUpdated.status === "EM_ANDAMENTO"
+                              ? "Iniciando…"
+                              : "Iniciar"}
+                          </button>
+                        ) : null}
+                        {request.status === "CONFIRMADO"
+                          && (request.operational_status === "EM_ANDAMENTO" || request.operational_status === "ATRASADO") ? (
+                            <button
+                              aria-label={`Concluir atendimento de ${request.name}`}
+                              className="admin-action admin-action--complete"
+                              disabled={operationalStatusBeingUpdated?.requestId === request.id}
+                              onClick={() => void updateOperationalStatus(request, "CONCLUÍDO")}
+                              type="button"
+                            >
+                              {operationalStatusBeingUpdated?.requestId === request.id
+                                && operationalStatusBeingUpdated.status === "CONCLUÍDO"
+                                ? "Concluindo…"
+                                : "Concluir"}
+                            </button>
+                          ) : null}
                         {request.status !== "CANCELADO" ? (
                           <button
                             aria-label={`Cancelar solicitação de ${request.name}`}

@@ -7,6 +7,7 @@ import App from "./App";
 const fetchMock = vi.fn();
 let anaRequestStatus = "PENDENTE";
 let joaoRequestStatus = "CONFIRMADO";
+let joaoOperationalStatus: "AGENDADO" | "EM_ANDAMENTO" | "ATRASADO" | "CONCLUÍDO";
 let anaRequestSchedule: {
   operational_status: "AGENDADO";
   scheduled_start_at: string;
@@ -45,6 +46,7 @@ beforeEach(() => {
   window.localStorage.clear();
   anaRequestStatus = "PENDENTE";
   joaoRequestStatus = "CONFIRMADO";
+  joaoOperationalStatus = "AGENDADO";
   anaRequestSchedule = null;
   administratorServices = [{
     id: 1,
@@ -176,7 +178,7 @@ beforeEach(() => {
         status: joaoRequestStatus,
         tracking_code: "ATS-00000003",
         created_at: "2026-09-03T10:00:00",
-        operational_status: "AGENDADO",
+        operational_status: joaoOperationalStatus,
         scheduled_start_at: "2026-09-08T10:00:00",
         scheduled_end_at: "2026-09-08T10:45:00",
         workshop_box_label: "Box 1",
@@ -284,6 +286,23 @@ beforeEach(() => {
       };
       return new Response(
         JSON.stringify({ id: 1, status: anaRequestStatus, ...anaRequestSchedule, workshop_box_id: 1, employee_id: 1 }),
+        { status: 200 },
+      );
+    }
+
+    const operationalStatusUpdateMatch = parsedUrl.pathname.match(/\/admin\/requests\/(\d+)\/operational-status$/);
+    if (operationalStatusUpdateMatch) {
+      expect(init?.method).toBe("PATCH");
+      expect(init?.headers).toEqual({
+        Authorization: "Bearer administrator-token",
+        "Content-Type": "application/json",
+      });
+      expect(Number(operationalStatusUpdateMatch[1])).toBe(3);
+      const payload = JSON.parse(String(init?.body)) as { operational_status: typeof joaoOperationalStatus };
+      expect(["EM_ANDAMENTO", "CONCLUÍDO"]).toContain(payload.operational_status);
+      joaoOperationalStatus = payload.operational_status;
+      return new Response(
+        JSON.stringify({ id: 3, status: "CONFIRMADO", operational_status: joaoOperationalStatus }),
         { status: 200 },
       );
     }
@@ -517,6 +536,31 @@ test("administrator can schedule a pending request from the suggestion while rev
   expect(await screen.findByText("Atendimento confirmado", { selector: "strong" })).toBeInTheDocument();
   expect(await screen.findByText("Agendado")).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Agendar solicitação de Ana Silva" })).not.toBeInTheDocument();
+});
+
+test("administrator can start and conclude a scheduled attendance", async () => {
+  const user = userEvent.setup();
+  window.history.replaceState({}, "", "/admin");
+  window.localStorage.setItem(
+    "autosync.administrator-session",
+    JSON.stringify({ accessToken: "administrator-token" }),
+  );
+  render(<App />);
+
+  await screen.findByText("Ana Silva");
+  await user.type(screen.getByLabelText("Buscar por nome ou e-mail"), "João");
+  await user.click(screen.getByRole("button", { name: "Buscar" }));
+  expect(await screen.findByText("João Souza")).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "Iniciar atendimento de João Souza" }));
+  expect(await screen.findByRole("status")).toHaveTextContent("Atendimento de João Souza iniciado.");
+  expect(await screen.findByText("Em andamento")).toBeInTheDocument();
+  expect(await screen.findByRole("button", { name: "Concluir atendimento de João Souza" })).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "Concluir atendimento de João Souza" }));
+  expect(await screen.findByRole("status")).toHaveTextContent("Atendimento de João Souza concluído.");
+  expect(await screen.findByText("Concluído")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Concluir atendimento de João Souza" })).not.toBeInTheDocument();
 });
 
 test("administrator can cancel pending and confirmed requests with refreshed feedback", async () => {
