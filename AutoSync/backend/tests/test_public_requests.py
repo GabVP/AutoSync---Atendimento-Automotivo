@@ -3,7 +3,7 @@ import os
 os.environ["DATABASE_URL"] = "sqlite+pysqlite:///:memory:"
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
@@ -53,6 +53,13 @@ def test_visitor_can_create_a_pending_request_and_receive_tracking_code() -> Non
         assert body["status"] == "PENDENTE"
         assert body["tracking_code"].startswith("ATS-")
         assert body["service_title"] == "Troca de óleo"
+        with Session(engine) as session:
+            persisted_request = session.get(AttendanceRequest, body["id"])
+
+            assert persisted_request is not None
+            assert persisted_request.status == "PENDENTE"
+            assert persisted_request.name == "Ana Silva"
+            assert persisted_request.service_id == service_id
     finally:
         app.dependency_overrides.clear()
 
@@ -91,6 +98,8 @@ def test_visitor_cannot_submit_a_request_with_a_blank_required_field() -> None:
             )
 
         assert response.status_code == 422
+        with Session(engine) as session:
+            assert session.scalar(select(AttendanceRequest.id)) is None
     finally:
         app.dependency_overrides.clear()
 
