@@ -56,6 +56,24 @@ type AdministratorService = Service & {
   is_active: boolean;
 };
 
+type AdministratorWorkshopResource = {
+  id: number;
+  label?: string;
+  name?: string;
+  is_active: boolean;
+};
+
+type WorkshopResourceValueField = "label" | "name";
+
+type WorkshopResourceConfiguration = {
+  kind: "box" | "employee";
+  collectionLabel: string;
+  singularLabel: string;
+  endpoint: "boxes" | "employees";
+  inputLabel: string;
+  valueField: WorkshopResourceValueField;
+};
+
 type ApplicationPath = "/" | "/login" | "/admin";
 
 type AdministratorSession = {
@@ -95,6 +113,24 @@ const emptyForm: FormValues = {
 const emptyAdministratorServiceForm = {
   title: "",
   durationMinutes: "",
+};
+
+const workshopBoxConfiguration: WorkshopResourceConfiguration = {
+  kind: "box",
+  collectionLabel: "Boxes",
+  singularLabel: "box",
+  endpoint: "boxes",
+  inputLabel: "Identificação do box",
+  valueField: "label",
+};
+
+const employeeConfiguration: WorkshopResourceConfiguration = {
+  kind: "employee",
+  collectionLabel: "Funcionários",
+  singularLabel: "funcionário",
+  endpoint: "employees",
+  inputLabel: "Nome do funcionário",
+  valueField: "name",
 };
 
 const serviceIcons: Record<string, string> = {
@@ -235,6 +271,10 @@ type AdministratorPanelProps = {
 };
 
 type AdministratorServicesProps = AdministratorPanelProps;
+
+type AdministratorWorkshopResourceManagerProps = AdministratorPanelProps & {
+  configuration: WorkshopResourceConfiguration;
+};
 
 function formatRequestDate(date: string): string {
   return new Intl.DateTimeFormat("pt-BR", {
@@ -510,6 +550,310 @@ function AdministratorServices({ accessToken, onLogout }: AdministratorServicesP
   );
 }
 
+function workshopResourceValue(
+  resource: AdministratorWorkshopResource,
+  configuration: WorkshopResourceConfiguration,
+): string {
+  return resource[configuration.valueField] ?? "";
+}
+
+function workshopResourceDescription(
+  configuration: WorkshopResourceConfiguration,
+  value: string,
+): string {
+  return configuration.kind === "box" ? value : `Funcionário ${value}`;
+}
+
+function AdministratorWorkshopResourceManager({
+  accessToken,
+  configuration,
+  onLogout,
+}: AdministratorWorkshopResourceManagerProps) {
+  const [resources, setResources] = useState<AdministratorWorkshopResource[]>([]);
+  const [value, setValue] = useState("");
+  const [editingResource, setEditingResource] = useState<AdministratorWorkshopResource | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [resourceBeingDeactivated, setResourceBeingDeactivated] = useState<number | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadResources() {
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const response = await fetch(`${apiBaseUrl}/admin/${configuration.endpoint}`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (response.status === 401) {
+          if (isMounted) {
+            onLogout();
+          }
+          return;
+        }
+        if (!response.ok) {
+          throw new Error(`Não foi possível carregar os ${configuration.collectionLabel.toLowerCase()}.`);
+        }
+
+        const loadedResources = (await response.json()) as AdministratorWorkshopResource[];
+        if (isMounted) {
+          setResources(loadedResources);
+        }
+      } catch (loadError) {
+        if (isMounted) {
+          setError(
+            loadError instanceof Error
+              ? loadError.message
+              : `Não foi possível carregar os ${configuration.collectionLabel.toLowerCase()}.`,
+          );
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    void loadResources();
+    return () => {
+      isMounted = false;
+    };
+  }, [accessToken, configuration, onLogout]);
+
+  function resetForm() {
+    setValue("");
+    setEditingResource(null);
+  }
+
+  function editResource(resource: AdministratorWorkshopResource) {
+    setValue(workshopResourceValue(resource, configuration));
+    setEditingResource(resource);
+    setError(null);
+    setFeedback(null);
+  }
+
+  async function submitResource(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const normalizedValue = value.trim();
+    if (!normalizedValue) {
+      setError(`Informe ${configuration.inputLabel.toLowerCase()}.`);
+      setFeedback(null);
+      return;
+    }
+
+    const isEditing = editingResource !== null;
+    setError(null);
+    setFeedback(null);
+    setIsSaving(true);
+
+    try {
+      const response = await fetch(
+        isEditing
+          ? `${apiBaseUrl}/admin/${configuration.endpoint}/${editingResource.id}`
+          : `${apiBaseUrl}/admin/${configuration.endpoint}`,
+        {
+          method: isEditing ? "PATCH" : "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ [configuration.valueField]: normalizedValue }),
+        },
+      );
+      if (response.status === 401) {
+        onLogout();
+        return;
+      }
+      if (!response.ok) {
+        throw new Error(`Não foi possível ${isEditing ? "atualizar" : "criar"} o ${configuration.singularLabel}.`);
+      }
+
+      const savedResource = (await response.json()) as AdministratorWorkshopResource;
+      setResources((currentResources) => (
+        isEditing
+          ? currentResources.map((resource) => resource.id === savedResource.id ? savedResource : resource)
+          : [...currentResources, savedResource]
+      ));
+      const savedDescription = workshopResourceDescription(
+        configuration,
+        workshopResourceValue(savedResource, configuration),
+      );
+      setFeedback(`${savedDescription} ${isEditing ? "atualizado" : "criado"}.`);
+      resetForm();
+    } catch (saveError) {
+      setError(
+        saveError instanceof Error
+          ? saveError.message
+          : `Não foi possível ${isEditing ? "atualizar" : "criar"} o ${configuration.singularLabel}.`,
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function deactivateResource(resource: AdministratorWorkshopResource) {
+    setError(null);
+    setFeedback(null);
+    setResourceBeingDeactivated(resource.id);
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/admin/${configuration.endpoint}/${resource.id}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ is_active: false }),
+      });
+      if (response.status === 401) {
+        onLogout();
+        return;
+      }
+      if (!response.ok) {
+        throw new Error(`Não foi possível desativar o ${configuration.singularLabel}.`);
+      }
+
+      const updatedResource = (await response.json()) as AdministratorWorkshopResource;
+      setResources((currentResources) => currentResources.map((currentResource) => (
+        currentResource.id === updatedResource.id ? updatedResource : currentResource
+      )));
+      const updatedDescription = workshopResourceDescription(
+        configuration,
+        workshopResourceValue(updatedResource, configuration),
+      );
+      setFeedback(`${updatedDescription} desativado.`);
+      if (editingResource?.id === updatedResource.id) {
+        resetForm();
+      }
+    } catch (deactivationError) {
+      setError(
+        deactivationError instanceof Error
+          ? deactivationError.message
+          : `Não foi possível desativar o ${configuration.singularLabel}.`,
+      );
+    } finally {
+      setResourceBeingDeactivated(null);
+    }
+  }
+
+  return (
+    <section className="admin-workshop-resource" aria-labelledby={`admin-${configuration.kind}-title`}>
+      <h3 id={`admin-${configuration.kind}-title`}>{configuration.collectionLabel}</h3>
+      <form className="admin-service-form" onSubmit={submitResource}>
+        <label>
+          {configuration.inputLabel}
+          <input
+            minLength={2}
+            onChange={(event) => setValue(event.target.value)}
+            required
+            value={value}
+          />
+        </label>
+        {error ? <p className="notice notice--error" role="alert">{error}</p> : null}
+        {feedback ? <p className="notice notice--success" role="status">{feedback}</p> : null}
+        <div className="admin-service-form__actions">
+          <button className="button" disabled={isSaving} type="submit">
+            {isSaving
+              ? "Salvando…"
+              : editingResource
+                ? "Salvar alterações"
+                : `Adicionar ${configuration.singularLabel}`}
+          </button>
+          {editingResource ? (
+            <button className="admin-service-form__cancel" onClick={resetForm} type="button">Cancelar edição</button>
+          ) : null}
+        </div>
+      </form>
+
+      <div className="admin-table-wrap">
+        {isLoading ? <p className="notice">Carregando {configuration.collectionLabel.toLowerCase()}…</p> : null}
+        {!isLoading && !error && resources.length === 0 ? (
+          <p className="notice">Nenhum {configuration.singularLabel} cadastrado.</p>
+        ) : null}
+        {!isLoading && !error && resources.length ? (
+          <table className="admin-table admin-workshop-resources-table">
+            <caption>{resources.length} {configuration.collectionLabel.toLowerCase()} cadastrados</caption>
+            <thead>
+              <tr>
+                <th scope="col">{configuration.singularLabel}</th>
+                <th scope="col">Status</th>
+                <th scope="col">Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {resources.map((resource) => {
+                const resourceValue = workshopResourceValue(resource, configuration);
+                return (
+                  <tr key={resource.id}>
+                    <td><strong>{resourceValue}</strong></td>
+                    <td>
+                      <strong className={`admin-service-status admin-service-status--${resource.is_active ? "active" : "inactive"}`}>
+                        {resource.is_active ? "Ativo" : "Inativo"}
+                      </strong>
+                    </td>
+                    <td>
+                      <div className="admin-actions">
+                        <button
+                          aria-label={`Editar ${configuration.singularLabel} ${resourceValue}`}
+                          className="admin-action admin-action--edit"
+                          disabled={isSaving || resourceBeingDeactivated === resource.id}
+                          onClick={() => editResource(resource)}
+                          type="button"
+                        >
+                          Editar
+                        </button>
+                        {resource.is_active ? (
+                          <button
+                            aria-label={`Desativar ${configuration.singularLabel} ${resourceValue}`}
+                            className="admin-action admin-action--deactivate"
+                            disabled={isSaving || resourceBeingDeactivated === resource.id}
+                            onClick={() => void deactivateResource(resource)}
+                            type="button"
+                          >
+                            {resourceBeingDeactivated === resource.id ? "Desativando…" : "Desativar"}
+                          </button>
+                        ) : null}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function AdministratorWorkshopResources({ accessToken, onLogout }: AdministratorPanelProps) {
+  return (
+    <section className="admin-workshop-resources" aria-labelledby="admin-workshop-resources-title">
+      <div className="admin-workshop-resources__heading">
+        <p className="eyebrow">CAPACIDADE DA OFICINA</p>
+        <h2 id="admin-workshop-resources-title">Gerenciar recursos da oficina</h2>
+        <p>Cadastre, atualize ou desative os boxes e funcionários usados nos atendimentos.</p>
+      </div>
+      <div className="admin-workshop-resources__grid">
+        <AdministratorWorkshopResourceManager
+          accessToken={accessToken}
+          configuration={workshopBoxConfiguration}
+          onLogout={onLogout}
+        />
+        <AdministratorWorkshopResourceManager
+          accessToken={accessToken}
+          configuration={employeeConfiguration}
+          onLogout={onLogout}
+        />
+      </div>
+    </section>
+  );
+}
+
 function AdministratorPanel({ accessToken, onLogout }: AdministratorPanelProps) {
   const [requestPage, setRequestPage] = useState<AdministratorRequestPage | null>(null);
   const [statusFilter, setStatusFilter] = useState<RequestStatus | "">("");
@@ -770,6 +1114,7 @@ function AdministratorPanel({ accessToken, onLogout }: AdministratorPanelProps) 
         ) : null}
 
         <AdministratorServices accessToken={accessToken} onLogout={onLogout} />
+        <AdministratorWorkshopResources accessToken={accessToken} onLogout={onLogout} />
       </section>
     </main>
   );

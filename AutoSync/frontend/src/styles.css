@@ -170,6 +170,17 @@ textarea { resize: vertical; min-height: 89px; }
 .admin-service-status--inactive { color: #6c5265; background: #f1e9ef; }
 .admin-action--edit { border-color: #cdd4dc; background: #fff; color: #303843; }
 .admin-action--deactivate { border-color: #bd1722; background: #bd1722; }
+.admin-workshop-resources { margin-top: 52px; padding-top: 42px; border-top: 1px solid #dfe3e7; }
+.admin-workshop-resources__heading { max-width: 670px; margin-bottom: 20px; }
+.admin-workshop-resources h2 { margin: 0; font-size: clamp(28px, 3vw, 38px); }
+.admin-workshop-resources__heading > p:last-child { margin: 9px 0 0; color: #68717d; font-size: 14px; line-height: 1.45; }
+.admin-workshop-resources__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.admin-workshop-resource { display: grid; gap: 14px; padding: 20px; border: 1px solid #e3e6ea; border-radius: 8px; background: #fff; }
+.admin-workshop-resource h3 { margin: 0; font-size: 24px; }
+.admin-workshop-resource .admin-service-form { padding: 0; border: 0; border-radius: 0; }
+.admin-workshop-resource .admin-table-wrap { border-radius: 5px; }
+.admin-workshop-resources-table { min-width: 440px; }
+.admin-workshop-resources-table td:first-child { min-width: 160px; }
 
 footer { display: grid; grid-template-columns: 1.25fr 1.55fr 1.3fr 1.25fr 1fr; gap: 26px; padding: 28px max(32px, calc((100vw - 1190px) / 2)); color: #e7e7e8; background: #111317; }
 footer .brand { color: #fff; }
@@ -191,6 +202,7 @@ footer div b { margin-bottom: 2px; }
   .admin-toolbar { align-items: stretch; }
   .admin-toolbar__search { justify-content: stretch; }
   .admin-services__content { grid-template-columns: 1fr; }
+  .admin-workshop-resources__grid { grid-template-columns: 1fr; }
   footer { grid-template-columns: 1.2fr 1fr 1fr; }
   footer p:last-child, footer .brand + p { display: none; }
 }
@@ -226,6 +238,8 @@ footer div b { margin-bottom: 2px; }
   .admin-pagination { justify-content: space-between; gap: 8px; }
   .admin-services { margin-top: 38px; padding-top: 32px; }
   .admin-service-form { padding: 18px 16px; }
+  .admin-workshop-resources { margin-top: 38px; padding-top: 32px; }
+  .admin-workshop-resource { padding: 18px 16px; }
   .services-panel, .form-card { padding: 19px 16px; border-radius: 0; }
   h2, .form-card h2 { font-size: 29px; }
   .service-grid { grid-template-columns: 1fr; }

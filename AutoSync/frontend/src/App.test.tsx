@@ -14,6 +14,24 @@ let administratorServices: Array<{
   is_active: boolean;
 }>;
 let nextAdministratorServiceId: number;
+type MockWorkshopResource = {
+  id: number;
+  label?: string;
+  name?: string;
+  is_active: boolean;
+};
+let administratorBoxes: MockWorkshopResource[];
+let administratorEmployees: MockWorkshopResource[];
+let nextAdministratorBoxId: number;
+let nextAdministratorEmployeeId: number;
+
+function workshopResourcesFor(kind: "boxes" | "employees"): MockWorkshopResource[] {
+  return kind === "boxes" ? administratorBoxes : administratorEmployees;
+}
+
+function workshopResourceFieldFor(kind: "boxes" | "employees"): "label" | "name" {
+  return kind === "boxes" ? "label" : "name";
+}
 
 beforeEach(() => {
   window.history.replaceState({}, "", "/");
@@ -27,6 +45,10 @@ beforeEach(() => {
     is_active: true,
   }];
   nextAdministratorServiceId = 2;
+  administratorBoxes = [{ id: 1, label: "Box 1", is_active: true }];
+  administratorEmployees = [{ id: 1, name: "Ana Martins", is_active: true }];
+  nextAdministratorBoxId = 2;
+  nextAdministratorEmployeeId = 2;
   fetchMock.mockImplementation(async (input: string | URL, init?: RequestInit) => {
     const url = input.toString();
     const parsedUrl = new URL(url);
@@ -71,6 +93,54 @@ beforeEach(() => {
       }
       administratorServices[serviceIndex] = { ...administratorServices[serviceIndex], ...payload };
       return new Response(JSON.stringify(administratorServices[serviceIndex]), { status: 200 });
+    }
+
+    const workshopResourceListMatch = parsedUrl.pathname.match(/\/admin\/(boxes|employees)$/);
+    if (workshopResourceListMatch) {
+      const kind = workshopResourceListMatch[1] as "boxes" | "employees";
+      const resources = workshopResourcesFor(kind);
+      const field = workshopResourceFieldFor(kind);
+      if (init?.method === "POST") {
+        expect(init.headers).toEqual({
+          Authorization: "Bearer administrator-token",
+          "Content-Type": "application/json",
+        });
+        const payload = JSON.parse(String(init.body)) as Record<typeof field, string>;
+        const createdResource: MockWorkshopResource = {
+          id: kind === "boxes" ? nextAdministratorBoxId : nextAdministratorEmployeeId,
+          [field]: payload[field],
+          is_active: true,
+        };
+        if (kind === "boxes") {
+          nextAdministratorBoxId += 1;
+        } else {
+          nextAdministratorEmployeeId += 1;
+        }
+        resources.push(createdResource);
+        return new Response(JSON.stringify(createdResource), { status: 201 });
+      }
+
+      expect(init?.headers).toEqual({ Authorization: "Bearer administrator-token" });
+      return new Response(JSON.stringify(resources), { status: 200 });
+    }
+
+    const workshopResourceUpdateMatch = parsedUrl.pathname.match(/\/admin\/(boxes|employees)\/(\d+)$/);
+    if (workshopResourceUpdateMatch) {
+      expect(init?.method).toBe("PATCH");
+      expect(init?.headers).toEqual({
+        Authorization: "Bearer administrator-token",
+        "Content-Type": "application/json",
+      });
+      const kind = workshopResourceUpdateMatch[1] as "boxes" | "employees";
+      const resourceId = Number(workshopResourceUpdateMatch[2]);
+      const resources = workshopResourcesFor(kind);
+      const payload = JSON.parse(String(init?.body)) as Partial<MockWorkshopResource>;
+      const resourceIndex = resources.findIndex((resource) => resource.id === resourceId);
+      if (resourceIndex === -1) {
+        return new Response(null, { status: 404 });
+      }
+      resources[resourceIndex] = { ...resources[resourceIndex], ...payload };
+      return new Response(JSON.stringify(resources[resourceIndex]), { status: 200 });
     }
 
     if (parsedUrl.pathname.endsWith("/services")) {
@@ -459,4 +529,44 @@ test("administrator can create, edit, and deactivate a service", async () => {
   expect(await screen.findByRole("status")).toHaveTextContent("Serviço Revisão premium desativado.");
   expect(await screen.findByText("Inativo")).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Desativar serviço Revisão premium" })).not.toBeInTheDocument();
+});
+
+test("administrator can create, edit, and deactivate boxes and employees", async () => {
+  const user = userEvent.setup();
+  window.history.replaceState({}, "", "/admin");
+  window.localStorage.setItem(
+    "autosync.administrator-session",
+    JSON.stringify({ accessToken: "administrator-token" }),
+  );
+  render(<App />);
+
+  expect(await screen.findByRole("heading", { name: "Gerenciar recursos da oficina" })).toBeInTheDocument();
+  expect(await screen.findByRole("button", { name: "Editar box Box 1" })).toBeInTheDocument();
+  expect(await screen.findByRole("button", { name: "Editar funcionário Ana Martins" })).toBeInTheDocument();
+
+  await user.type(screen.getByLabelText("Identificação do box"), "Box de alinhamento");
+  await user.click(screen.getByRole("button", { name: "Adicionar box" }));
+  expect(await screen.findByText("Box de alinhamento criado.")).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "Editar box Box de alinhamento" }));
+  await user.clear(screen.getByLabelText("Identificação do box"));
+  await user.type(screen.getByLabelText("Identificação do box"), "Box de diagnósticos");
+  await user.click(screen.getByRole("button", { name: "Salvar alterações" }));
+  expect(await screen.findByText("Box de diagnósticos atualizado.")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Desativar box Box de diagnósticos" }));
+  expect(await screen.findByText("Box de diagnósticos desativado.")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Desativar box Box de diagnósticos" })).not.toBeInTheDocument();
+
+  await user.type(screen.getByLabelText("Nome do funcionário"), "Bruno Lima");
+  await user.click(screen.getByRole("button", { name: "Adicionar funcionário" }));
+  expect(await screen.findByText("Funcionário Bruno Lima criado.")).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "Editar funcionário Bruno Lima" }));
+  await user.clear(screen.getByLabelText("Nome do funcionário"));
+  await user.type(screen.getByLabelText("Nome do funcionário"), "Bruno Costa");
+  await user.click(screen.getAllByRole("button", { name: "Salvar alterações" })[0]);
+  expect(await screen.findByText("Funcionário Bruno Costa atualizado.")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Desativar funcionário Bruno Costa" }));
+  expect(await screen.findByText("Funcionário Bruno Costa desativado.")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Desativar funcionário Bruno Costa" })).not.toBeInTheDocument();
 });

@@ -88,6 +88,92 @@ class AdministratorServiceResponse(BaseModel):
     is_active: bool
 
 
+class AdministratorWorkshopBoxCreate(BaseModel):
+    label: str = Field(min_length=2, max_length=80)
+
+    @field_validator("label")
+    @classmethod
+    def label_cannot_be_blank(cls, value: str) -> str:
+        normalized_value = value.strip()
+        if not normalized_value:
+            raise ValueError("This field cannot be blank.")
+        return normalized_value
+
+
+class AdministratorWorkshopBoxUpdate(BaseModel):
+    label: str | None = Field(default=None, min_length=2, max_length=80)
+    is_active: bool | None = None
+
+    @field_validator("label")
+    @classmethod
+    def label_cannot_be_blank(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized_value = value.strip()
+        if not normalized_value:
+            raise ValueError("This field cannot be blank.")
+        return normalized_value
+
+    @model_validator(mode="after")
+    def requires_a_change(self) -> "AdministratorWorkshopBoxUpdate":
+        if not self.model_fields_set:
+            raise ValueError("Provide at least one workshop box field to update.")
+        if any(getattr(self, field) is None for field in self.model_fields_set):
+            raise ValueError("Workshop box fields cannot be null.")
+        return self
+
+
+class AdministratorWorkshopBoxResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    label: str
+    is_active: bool
+
+
+class AdministratorEmployeeCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+
+    @field_validator("name")
+    @classmethod
+    def name_cannot_be_blank(cls, value: str) -> str:
+        normalized_value = value.strip()
+        if not normalized_value:
+            raise ValueError("This field cannot be blank.")
+        return normalized_value
+
+
+class AdministratorEmployeeUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=120)
+    is_active: bool | None = None
+
+    @field_validator("name")
+    @classmethod
+    def name_cannot_be_blank(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized_value = value.strip()
+        if not normalized_value:
+            raise ValueError("This field cannot be blank.")
+        return normalized_value
+
+    @model_validator(mode="after")
+    def requires_a_change(self) -> "AdministratorEmployeeUpdate":
+        if not self.model_fields_set:
+            raise ValueError("Provide at least one employee field to update.")
+        if any(getattr(self, field) is None for field in self.model_fields_set):
+            raise ValueError("Employee fields cannot be null.")
+        return self
+
+
+class AdministratorEmployeeResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    is_active: bool
+
+
 class PublicServiceResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
