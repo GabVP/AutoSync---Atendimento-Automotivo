@@ -2,7 +2,7 @@ from datetime import datetime
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 
 class AdministratorLoginRequest(BaseModel):
@@ -42,6 +42,50 @@ class AdministratorRequestStatusUpdate(BaseModel):
 class AdministratorRequestStatusResponse(BaseModel):
     id: int
     status: Literal["PENDENTE", "CONFIRMADO", "CANCELADO"]
+
+
+class AdministratorServiceCreate(BaseModel):
+    title: str = Field(min_length=2, max_length=120)
+    duration_minutes: int = Field(ge=1, le=480)
+
+    @field_validator("title")
+    @classmethod
+    def title_cannot_be_blank(cls, value: str) -> str:
+        normalized_value = value.strip()
+        if not normalized_value:
+            raise ValueError("This field cannot be blank.")
+        return normalized_value
+
+
+class AdministratorServiceUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=2, max_length=120)
+    duration_minutes: int | None = Field(default=None, ge=1, le=480)
+    is_active: bool | None = None
+
+    @field_validator("title")
+    @classmethod
+    def title_cannot_be_blank(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized_value = value.strip()
+        if not normalized_value:
+            raise ValueError("This field cannot be blank.")
+        return normalized_value
+
+    @model_validator(mode="after")
+    def requires_a_change(self) -> "AdministratorServiceUpdate":
+        if not self.model_fields_set:
+            raise ValueError("Provide at least one service field to update.")
+        return self
+
+
+class AdministratorServiceResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    title: str
+    duration_minutes: int
+    is_active: bool
 
 
 class PublicServiceResponse(BaseModel):
