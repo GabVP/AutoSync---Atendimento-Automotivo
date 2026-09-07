@@ -8,7 +8,11 @@ from sqlalchemy.orm import Session
 
 from app.database import get_session
 from app.models import Administrator, AttendanceRequest, Employee, Service, WorkshopBox
-from app.operational_status import refresh_overdue_operational_status
+from app.operational_status import (
+    InvalidOperationalStatusTransition,
+    refresh_overdue_operational_status,
+    transition_operational_status,
+)
 from app.request_status import InvalidRequestStatusTransition, transition_request_status
 from app.scheduling import (
     InvalidScheduleInterval,
@@ -17,6 +21,8 @@ from app.scheduling import (
     find_nearest_available_slot,
 )
 from app.schemas import (
+    AdministratorOperationalStatusResponse,
+    AdministratorOperationalStatusUpdate,
     AdministratorSchedulingConfirmationRequest,
     AdministratorSchedulingConfirmationResponse,
     AdministratorRequestPage,
@@ -216,6 +222,74 @@ def confirm_administrator_request_schedule(
         employee_name=employee.name,
         scheduled_start_at=attendance_request.scheduled_start_at,
         scheduled_end_at=attendance_request.scheduled_end_at,
+    )
+
+
+@router.patch(
+    "/{request_id}/operational-status",
+    response_model=AdministratorOperationalStatusResponse,
+)
+def update_administrator_operational_status(
+    request_id: int,
+    payload: AdministratorOperationalStatusUpdate,
+    session: Session = Depends(get_session),
+    _: Administrator = Depends(get_current_administrator),
+) -> AdministratorOperationalStatusResponse:
+    attendance_request = session.get(AttendanceRequest, request_id)
+    if attendance_request is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="The requested attendance request was not found.",
+        )
+    if (
+        attendance_request.status != "CONFIRMADO"
+        or attendance_request.operational_status is None
+        or attendance_request.scheduled_start_at is None
+        or attendance_request.scheduled_end_at is None
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only scheduled confirmed requests can update their operational status.",
+        )
+
+    now = datetime.now()
+    refreshed_operational_status = refresh_overdue_operational_status(
+        current_status=attendance_request.operational_status,
+        scheduled_start_at=attendance_request.scheduled_start_at,
+        scheduled_end_at=attendance_request.scheduled_end_at,
+        now=now,
+    )
+    if refreshed_operational_status != attendance_request.operational_status:
+        attendance_request.operational_status = refreshed_operational_status
+        session.commit()
+        session.refresh(attendance_request)
+
+    if (
+        payload.operational_status == "EM_ANDAMENTO"
+        and now < attendance_request.scheduled_start_at
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An attendance cannot start before its scheduled time.",
+        )
+
+    try:
+        attendance_request.operational_status = transition_operational_status(
+            attendance_request.operational_status,
+            payload.operational_status,
+        )
+    except InvalidOperationalStatusTransition as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The requested operational status transition is not allowed.",
+        ) from error
+
+    session.commit()
+    session.refresh(attendance_request)
+    return AdministratorOperationalStatusResponse(
+        id=attendance_request.id,
+        status="CONFIRMADO",
+        operational_status=attendance_request.operational_status,
     )
 
 

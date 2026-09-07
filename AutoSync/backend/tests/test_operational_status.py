@@ -3,6 +3,10 @@ from datetime import datetime
 import pytest
 
 from app.operational_status import refresh_overdue_operational_status
+from app.operational_status import (
+    InvalidOperationalStatusTransition,
+    transition_operational_status,
+)
 
 
 @pytest.mark.parametrize(
@@ -37,3 +41,23 @@ def test_keeps_a_scheduled_attendance_on_time_until_its_start_has_passed() -> No
         )
         == "AGENDADO"
     )
+
+
+@pytest.mark.parametrize(
+    ("current_status", "next_status"),
+    [
+        ("AGENDADO", "EM_ANDAMENTO"),
+        ("EM_ANDAMENTO", "CONCLUÍDO"),
+        ("ATRASADO", "CONCLUÍDO"),
+    ],
+)
+def test_allows_the_operational_status_transitions_that_release_resources_only_on_completion(
+    current_status: str,
+    next_status: str,
+) -> None:
+    assert transition_operational_status(current_status, next_status) == next_status
+
+
+def test_rejects_operational_status_transitions_that_skip_the_attendance_lifecycle() -> None:
+    with pytest.raises(InvalidOperationalStatusTransition):
+        transition_operational_status("AGENDADO", "CONCLUÍDO")

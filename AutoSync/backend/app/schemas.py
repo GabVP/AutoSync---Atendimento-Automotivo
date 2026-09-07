@@ -49,6 +49,16 @@ class AdministratorRequestStatusResponse(BaseModel):
     status: Literal["PENDENTE", "CONFIRMADO", "CANCELADO"]
 
 
+class AdministratorOperationalStatusUpdate(BaseModel):
+    operational_status: Literal["EM_ANDAMENTO", "CONCLUÍDO"]
+
+
+class AdministratorOperationalStatusResponse(BaseModel):
+    id: int
+    status: Literal["CONFIRMADO"]
+    operational_status: Literal["EM_ANDAMENTO", "ATRASADO", "CONCLUÍDO"]
+
+
 class AdministratorSchedulingSuggestionResponse(BaseModel):
     request_id: int
     workshop_box_id: int
